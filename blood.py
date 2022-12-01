@@ -1,15 +1,16 @@
 import random
+import numpy as np
 
 # Class representing the phenotype of an individual
 class Blood:
 
-    def __init__(self, SETTINGS = None, ethnicity = None, major = "", minor = ""):
+    def __init__(self, PARAMS, ethnicity = None, patgroup = "", major = "", minor = "", num_units = 0, issuing_day = 0, age = 0):
 
         vector = []
 
         if major == "":
-            vector += random.choices(SETTINGS.ABO_genotypes, weights = SETTINGS.ABO_prevalences[ethnicity], k=1)[0]
-            vector += random.choices(SETTINGS.Rhesus_genotypes, weights = SETTINGS.Rhesus_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.ABO_genotypes, weights = PARAMS.ABO_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.Rhesus_genotypes, weights = PARAMS.Rhesus_prevalences[ethnicity], k=1)[0]
 
         else:
 
@@ -29,9 +30,9 @@ class Blood:
                 Rhesus_prevalences_Dpos = []
                 Rhesus_prevalences_Dneg = []
 
-                for i in range(len(SETTINGS.Rhesus_genotypes)):
-                    genotype = SETTINGS.Rhesus_genotypes[i]
-                    prevalence = SETTINGS.Rhesus_prevalences[ethnicity][i]
+                for i in range(len(PARAMS.Rhesus_genotypes)):
+                    genotype = PARAMS.Rhesus_genotypes[i]
+                    prevalence = PARAMS.Rhesus_prevalences[ethnicity][i]
                     if genotype[0] == 1:
                         Rhesus_genotypes_Dpos.append(genotype)
                         Rhesus_prevalences_Dpos.append(prevalence)
@@ -55,23 +56,64 @@ class Blood:
                     print("Attempted to create Blood instance, but the given major bloodgroup does not contain + or - for RhD.")
 
         if minor == "":
-            vector += random.choices(SETTINGS.Kell_genotypes, weights = SETTINGS.Kell_prevalences[ethnicity], k=1)[0]
-            vector += random.choices(SETTINGS.MNS_genotypes, weights = SETTINGS.MNS_prevalences[ethnicity], k=1)[0]
-            vector += random.choices(SETTINGS.Duffy_genotypes, weights = SETTINGS.Duffy_prevalences[ethnicity], k=1)[0]
-            vector += random.choices(SETTINGS.Kidd_genotypes, weights = SETTINGS.Kidd_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.Kell_genotypes, weights = PARAMS.Kell_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.MNS_genotypes, weights = PARAMS.MNS_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.Duffy_genotypes, weights = PARAMS.Duffy_prevalences[ethnicity], k=1)[0]
+            vector += random.choices(PARAMS.Kidd_genotypes, weights = PARAMS.Kidd_prevalences[ethnicity], k=1)[0]
 
         else:
             vector += minor
 
-        self.ethnicity = ethnicity
-        self.vector = vector
+        vector_included = []
+        included_antigens = PARAMS.major + PARAMS.minor
+        all_antigens = ["A", "B", "D", "C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"]
+        for i in range(len(all_antigens)):
+            if all_antigens[i] in included_antigens:
+                vector_included.append(vector[i])
+
+        self.vector = vector_included
         self.major = vector_to_major(vector)
 
+        # Only used for inventory products.
+        self.ethnicity = ethnicity
+        self.age = age
+
+        # Only used for requests.
+        self.patgroup = patgroup
+        self.num_units = num_units
+        self.issuing_day = issuing_day
+        
 
     # Transform the binary antigen vector to a blood group index
     def vector_to_bloodgroup_index(self):
         return int("".join(str(i) for i in self.vector),2)
 
+    def get_usability(self, PARAMS):
+        
+        ABO_usability = 0
+        RhD_usability = 1
+
+        # TODO this is now hardcoded for the case where SCD patients are Africans and all others are Caucasions, change to more flexible.
+        part_african = PARAMS.patgroup_distr[-1]
+
+        # Calculate the ABO-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
+        ABO_v = self.vector[:2] 
+        ABO_g = PARAMS.ABO_genotypes
+        for g in range(len(ABO_g)):
+            if all(v <= g for v, g in zip(ABO_v, ABO_g[g])):
+                ABO_usability += PARAMS.ABO_prevalences["African"][g] * part_african
+                ABO_usability += PARAMS.ABO_prevalences["Caucasian"][g] * (1 - part_african)
+
+        # Calculate the RhD-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
+        # If the considered blood product is RhD negative, usability is always 1. Therefore usability is only calculated when the product is RhD positive.
+        # TODO make more efficient by pre-computing these values and storing them somewhere
+        Dpos = np.array([g[0] for g in PARAMS.Rhesus_genotypes])
+        Dpos_prevalence = sum(np.array(PARAMS.Rhesus_prevalences["African"]) * part_african * Dpos) + sum(np.array(PARAMS.Rhesus_prevalences["Caucasian"]) * (1 - part_african) * Dpos)
+        if self.vector[2] == 1:
+            RhD_usability = Dpos_prevalence
+
+        #return the product of all the invdiviual system usabilities to compute the final usabilty
+        return ABO_usability * RhD_usability
 
 # Obtain the major blood group from a blood antigen vector
 def vector_to_major(vector):
@@ -90,6 +132,20 @@ def vector_to_major(vector):
         major += "-"
 
     return major
+
+def compute_compatibility(PARAMS, I, R):
+
+    C = np.zeros([len(I), len(R)])
+    num_major = len(PARAMS.major)
+
+    for i in range(len(I)):
+        for r in range(len(R)):
+            if all(i <= r for i, r in zip(I[i].vector[:num_major], R[r].vector[:num_major])):
+                C[i,r] = 1
+
+    return C
+
+
 
 
 #         COMPATIBILITY_DONOR_PATIENT = [
