@@ -1,3 +1,5 @@
+import pandas as pd
+
 class Params():
     
     def __init__(self, SETTINGS):
@@ -10,9 +12,19 @@ class Params():
 
         self.ABOD = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
         self.major = ["A", "B", "D"]
-        self.minor = ["C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # "C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"
+        self.minor = ["C", "c", "E", "e", "K", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # "k", "M", "N"
+    
+
+        #######################
+        # MISMATCHING WEIGHTS #
+        #######################
+
+        # if SETTINGS.patgroup_musts:
+        #     self.relimm_weights = pd.read_csv(SETTINGS.home_dir + "data/relimm_patweights.csv", index_col="patgroup")
+        # else:
+        self.relimm_weights = pd.read_csv(SETTINGS.home_dir + "data/relimm_weights.csv")
         
-        self.relimm_weights = [0, 0, 0, 0.0345, 0.0705, 0.2395, 0.0836, 0.3838, 0, 0.0296, 0, 0.0131, 0, 0.0443, 0.0131, 0.0836, 0.0033]
+        self.patgroup_weights = pd.read_csv(SETTINGS.home_dir + "data/patgroup_weights.csv", index_col="patgroup")
 
 
         ##################
@@ -27,26 +39,6 @@ class Params():
             self.patgroup_distr = [0.886867, 0.049352, 0, 0.008607969, 0.014933, 0.031632, 0.008607969]
         elif SETTINGS.demand_scenario == "university":
             self.patgroup_distr = [0.64605, 0.10250, 0.04542, 0.05665, 0.02731, 0.06543, 0.05665]
-        
-        # A,B,D,C,c,E,e,K,k,M,N,S,s,Fya,Fyb,Jka,Jkb
-        # self.patgroup_weights = [
-        #     ["M","M","M",1,1,1,1,1,1,0,0,1,1,1,1,1,1],                  # Other
-        #     ["M","M","M",1,"M","M",1,"M",1,0,0,1,1,1,1,1,1],            # Wu45
-        #     ["M","M","M","M","M","M","M","M",1,0,0,1,1,2,2,2,2],        # MDS
-        #     ["M","M","M","M","M","M","M","M",1,0,0,1,1,2,2,2,2],        # Thal
-        #     ["M","M","M","M","M","M","M","M",1,0,0,1,2,3,3,3,3],        # AIHA
-        #     ["M","M","M","M","M","M","M","M",1,0,0,2,1,3,3,3,3],        # ALA
-        #     ["M","M","M","M","M","M","M","M",1,0,0,3,2,"M",3,"M","M"],  # SCD
-        # ]
-        self.patgroup_weights = [
-            [-1, -1, -1, 0.02651, 0.05429, 0.18433, 0.06439, 0.29543, 0, 0, 0, 0.00337, 0.00128, 0.02273, 0.00673, 0.04293, 0.00168],   # Other
-            [-1, -1, -1, 0.02651, -1, -1, 0.06439, -1, 0, 0, 0, 0.00337, 0.00128, 0.02273, 0.00673, 0.04293, 0.00168],                  # Wu45
-            [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0.10100, 0.03844, 0.68177, 0.20200, 1.28778, 0.05050],                            # MDS
-            [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0.10100, 0.03844, 0.68177, 0.20200, 1.28778, 0.05050],                            # Thal
-            [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0.20200, 0.07689, 01.3653, 0.40401, 2.57556, 0.10100],                            # AIHA
-            [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0.20200, 0.07689, 01.3653, 0.40401, 2.57556, 0.10100],                            # ALA
-            [-1, -1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0.33667, 0.12815, -1, 0.67335, -1, -1],                                           # SCD
-        ]
 
         self.request_lead_time_probabilities = {
             "Other" : [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 0, 0, 0, 0, 0, 0, 0],     # Other = uniform between [0,7] (CHANGE 3)

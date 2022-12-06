@@ -23,8 +23,8 @@ class Settings():
         # "test" for running simulations with saved model
         self.RL_mode = "train"
 
-        # Name of the model to be used for saving files.
-        self.model_name = "v0"
+        # Name of the model to be used for saving files (start with _ or leave empty).
+        self.model_name = ""
 
         #######################
         # GENERATION SETTINGS #
@@ -40,12 +40,12 @@ class Settings():
         # SIMULATION PARAMETERS #
         #########################
 
-        self.test_days = 20
-        self.init_days = 5
+        self.test_days = 365
+        self.init_days = 0
 
         # used for generating supply
         self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
-        self.supply_size = 8000
+        self.supply_size = 40000
 
         # used for generating demand
         self.avg_daily_demand = 100
@@ -54,10 +54,11 @@ class Settings():
         # self.episodes = 1500
         self.episodes = 5
 
-        # "ABOD": Only match on the major antigens.
+        # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
-        self.strategy = "relimm"
+        self.strategy = "patgroups"
+        self.patgroup_musts = False
 
         self.demand_scenario_names = [f"regional_{i}" for i in range(5)]
         self.supply_scenario_names = [f"cau{round(self.donor_eth_distr[0]*100)}_afr{round(self.donor_eth_distr[1]*100)}_asi{round(self.donor_eth_distr[2]*100)}" for i in range(5)]
@@ -89,9 +90,9 @@ class Settings():
 
 
     # Generate a file name for exporting log or result files.
-    def generate_filename(self, output_type, name):
+    def generate_filename(self, output_type, model_type):
 
-        return self.home_dir + f"{output_type}/{name}_{self.model_name}"
+        return self.home_dir + f"{output_type}/{model_type}_"
 
 
     def create_output_file(self, PARAMS, episode):
@@ -104,17 +105,18 @@ class Settings():
         ABOD_names = PARAMS.ABOD
         patgroups = PARAMS.patgroups
         ethnicities = ["Caucasian", "African", "Asian"]
-        days = [i for i in range(self.test_days)]
+        days = [i for i in range(self.init_days + self.test_days)]
 
         ##########
         # HEADER #
         ##########
 
         # General information.
-        header = ["day", "name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
+        header = ["episode", "day", "name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
 
         # Gurobi optimizer info.
         header += ["gurobi status", "nvars", "calc time"]
+        header += ["objval shortages", "objval mismatches", "objval substitution", "objval fifo", "objval usability"]
         
         # Information about patients, donors, demand and supply.
         header += ["num patients"] + [f"num {eth} patients" for eth in ethnicities]
@@ -145,6 +147,7 @@ class Settings():
         # ADD BASIC INFO #
         ##################
 
+        df.loc[days,"episode"] = episode
         df.loc[days,"name"] = self.model_name
         df.loc[days,"supply scenario"] = f"cau{round(self.donor_eth_distr[0]*100)}_afr{round(self.donor_eth_distr[1]*100)}_asi{round(self.donor_eth_distr[2]*100)}_{episode}"
         df.loc[days,"demand scenario"] = f"{self.demand_scenario}_{episode}"

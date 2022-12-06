@@ -1,5 +1,6 @@
 import random
 import numpy as np
+from operator import itemgetter
 
 # Class representing the phenotype of an individual
 class Blood:
@@ -61,17 +62,13 @@ class Blood:
             vector += random.choices(PARAMS.Duffy_genotypes, weights = PARAMS.Duffy_prevalences[ethnicity], k=1)[0]
             vector += random.choices(PARAMS.Kidd_genotypes, weights = PARAMS.Kidd_prevalences[ethnicity], k=1)[0]
 
+            antigens_vector = ["A", "B", "D", "C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"]
+            self.vector = [vector[antigens_vector.index(ag)] for ag in (PARAMS.major + PARAMS.minor)]
+
         else:
             vector += minor
+            self.vector = vector
 
-        vector_included = []
-        included_antigens = PARAMS.major + PARAMS.minor
-        all_antigens = ["A", "B", "D", "C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"]
-        for i in range(len(all_antigens)):
-            if all_antigens[i] in included_antigens:
-                vector_included.append(vector[i])
-
-        self.vector = vector_included
         self.major = vector_to_major(vector)
 
         # Only used for inventory products.
@@ -133,15 +130,37 @@ def vector_to_major(vector):
 
     return major
 
-def compute_compatibility(PARAMS, I, R):
+def compute_compatibility(SETTINGS, PARAMS, I, R):
 
+    antigens = PARAMS.major + PARAMS.minor
     C = np.zeros([len(I), len(R)])
-    num_major = len(PARAMS.major)
 
-    for i in range(len(I)):
-        for r in range(len(R)):
-            if all(i <= r for i, r in zip(I[i].vector[:num_major], R[r].vector[:num_major])):
-                C[i,r] = 1
+    if ("patroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
+
+        for i in range(len(I)):
+            for r in range(len(R)):
+                v_musts_ir = [(I[i].vector[k], R[r].vector[k]) for k in range(len(antigens)) if PARAMS.patgroup_weights.loc[R[r].patgroup,antigens[k]] == 10]
+                if all(vi <= vr for vi, vr in v_musts_ir):
+                    C[i,r] = 1
+
+    # elif "relimm" in SETTINGS.strategy:
+
+    #     for i in range(len(I)):
+    #         for r in range(len(R)):
+    #             v_musts_ir = [(I[i].vector[k], R[r].vector[k]) for k in range(len(antigens)) if PARAMS.relimm_weights.loc[0,antigens[k]] == 10]
+    #             if all(vi <= vr for vi, vr in v_musts_ir):
+    #                 C[i,r] = 1
+        
+
+    else:
+        
+        num_major = len(PARAMS.major)
+
+        for i in range(len(I)):
+            for r in range(len(R)):
+                if all(vi <= vr for vi, vr in zip(I[i].vector[:num_major], R[r].vector[:num_major])):
+                    C[i,r] = 1
+
 
     return C
 

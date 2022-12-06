@@ -11,7 +11,7 @@ def main():
     PARAMS = Params(SETTINGS)
 
     # If a directory to store log files or results does not yet exist, make one.
-    for path in ["log", "log/nn", "log/ilp", "results"]:
+    for path in ["results"]:    # "log", "log/nn", "log/ilp"
         check_dir_existence(path)
 
 

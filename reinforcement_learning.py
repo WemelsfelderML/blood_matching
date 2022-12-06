@@ -75,9 +75,9 @@ class Environment():
 
         self.supply_index = 0
 
-        if SETTINGS.strategy == "relimm":
+        if "relimm" in SETTINGS.strategy:
             self.mismatch_weights = PARAMS.relimm_weights
-        elif SETTINGS.strategy == "patgroups":
+        elif "patgroups" in SETTINGS.strategy:
             self.mismatch_weights = PARAMS.patgroup_weights
 
     def sample_initial_state(self, SETTINGS, PARAMS):
