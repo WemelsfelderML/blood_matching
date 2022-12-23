@@ -1,345 +1,74 @@
 from gurobipy import *
 import numpy as np
-import pandas as pd
-import pickle
-# import csv
 import time
 import math
-# import os
 
 from blood import *
 
-class Simulation():
-    
-    def __init__(self, SETTINGS, PARAMS, e):
+class MINRAR():
 
-        # self.supply_scenario_index += 1
-        # self.demand_regional_index += 1
-        # self.demand_university_index += 1
+    def __init__(self, SETTINGS, PARAMS):
 
-        self.supply_scenario = pd.read_csv(SETTINGS.home_dir + f"supply/{SETTINGS.supply_size}/cau{round(SETTINGS.donor_eth_distr[0]*100)}_afr{round(SETTINGS.donor_eth_distr[1]*100)}_asi{round(SETTINGS.donor_eth_distr[2]*100)}_{e}.csv")
-        self.demand_scenario = pd.read_csv(SETTINGS.home_dir + f"demand/{SETTINGS.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{SETTINGS.demand_scenario}_{e}.csv")
+        # All antigens mapped to their index in the list of considered antigens.
+        antigens = PARAMS.major + PARAMS.minor
+        self.antigens = antigens
+        self.A = {antigens[k] : k for k in range(len(antigens))}   
+        self.A_minor = {k : self.A[k] for k in PARAMS.minor}
+        self.A_no_Fyb = {k : self.A[k] for k in antigens if k != "Fyb"}
 
-        self.supply_index = 0
+        # All patient groups mapped to their index in the list of patient groups.
+        self.P = {PARAMS.patgroups[i] : i for i in range(len(PARAMS.patgroups))}
 
-
-    def fill_initial_inventory(self, SETTINGS, PARAMS):
-        
-        inventory = []
-
-        # TODO: now we sample inventory for each day with uniform distribution, change this to sampling more young units and less old units.
-        n_products = round(SETTINGS.inventory_size / PARAMS.max_age)
-
-        # Sample supply for each age upto maximum age.
-        for age in range(PARAMS.max_age):
-            inventory += self.sample_supply_single_day(PARAMS, n_products, age)
-
-        return inventory
-
-
-    def update_inventory(self, SETTINGS, PARAMS, x, inventory, requests, day):
-
-        remove = []
-
-        # Remove all products form inventory that were issued to requests with today as their issuing date
-        for r in [r for r in range(len(requests)) if requests[r].issuing_day == day]:
-            remove += list(np.where(x[:,r]==1)[0])
-
-        # If a product will be outdated at the end of this day, remove from inventory, otherwise increase its age.
-        for i in range(len(inventory)):
-            if inventory[i].age >= (PARAMS.max_age-1):
-                remove.append(i)
-            else:
-                inventory[i].age += 1
-
-        inventory = [inventory[i] for i in range(len(inventory)) if i not in remove]
-        
-        # Generate new supply.
-        inventory += self.sample_supply_single_day(PARAMS, max(0, SETTINGS.inventory_size - len(inventory)))       
-
-        return inventory
-
-
-    def sample_supply_single_day(self, PARAMS, n_products, age = 0):
-
-        # Select the next part of the supply scenario.
-        data = self.supply_scenario.iloc[self.supply_index : self.supply_index + n_products]
-        self.supply_index += n_products
-
-        inventory = []
-        for i in data.index:
-            inventory.append(Blood(PARAMS, ethnicity = data.loc[i,"Ethnicity"], major = vector_to_major([data.loc[i,a] for a in PARAMS.major]), minor = [data.loc[i,a] for a in PARAMS.minor], age = age))
-
-        return inventory
-
-
-    def sample_requests_single_day(self, PARAMS, day = 0):
-
-        # Select the part of the demand scenario belonging to the given day.
-        # TODO: checken of het klopt met "Day Available" en "Day Needed"
-        data = self.demand_scenario.loc[self.demand_scenario["Day Available"] == day]
-
-        requests = []
-        for i in data.index:
-            requests.append(Blood(PARAMS, ethnicity = data.loc[i,"Ethnicity"], patgroup = data.loc[i,"Patient Type"], major = vector_to_major([data.loc[i,a] for a in PARAMS.major]), minor = [data.loc[i,a] for a in PARAMS.minor], num_units = data.loc[i,"Num Units"], issuing_day = data.loc[i,"Day Needed"]))
-
-        return requests
-
-
-# TODO
-def minrar(SETTINGS, PARAMS):
-
-    for e in range(SETTINGS.episodes):
-        print(f"\nEpisode: {e}")
-
-        sim = Simulation(SETTINGS, PARAMS, e)
-        inventory = sim.fill_initial_inventory(SETTINGS, PARAMS)
-        requests = []
-
-        df = SETTINGS.create_output_file(PARAMS, e)
-
-        for day in range(SETTINGS.init_days + SETTINGS.test_days):
-            print(f"\nDay {day}")
-
-            requests = [r for r in requests if r.issuing_day >= day]
-            requests += sim.sample_requests_single_day(PARAMS, day=day)
-
-            model, calc_time = allocate_minrar(SETTINGS, PARAMS, inventory, requests, day)
-
-            df.loc[day,"gurobi status"] = model.status
-            df.loc[day,"calc time"] = calc_time
-            if model.status == 2:   # If an optimal solution was found.
-                df, x, y, z = extract_model_solution(SETTINGS, PARAMS, df, model, inventory, requests, e, day)
-                if day >= SETTINGS.init_days:
-                    df = log_results(SETTINGS, PARAMS, df, model, inventory, requests, day, x=x, y=y, z=z)
-                inventory = sim.update_inventory(SETTINGS, PARAMS, x, inventory, requests, day)
-                
-            elif day >= SETTINGS.init_days:
-                print(PARAMS.status_code[model.status])
-                df = log_results(SETTINGS, PARAMS, df, model, inventory, requests, day)
-
-            else:
-                print(PARAMS.status_code[model.status])
-
-        df.to_csv(SETTINGS.generate_filename("results", "ilp") + f"{SETTINGS.strategy}{SETTINGS.model_name}_{SETTINGS.demand_scenario[:3]}_{e}.csv", sep=',', index=True)
+        # Mismatching weights for each antigen.
+        if "patgroups" in SETTINGS.strategy:
+            self.w = np.array(PARAMS.patgroup_weights.loc[PARAMS.patgroups, antigens])
+        elif "relimm" in SETTINGS.strategy:
+            self.w = np.array(PARAMS.relimm_weights[antigens])[0]
+        elif "major" in SETTINGS.strategy:
+            self.w = np.array([0] * len(antigens))
         
 
-def allocate_minrar(SETTINGS, PARAMS, inventory, requests, day):
-
-    start = time.perf_counter()
-
-    ################
-    ## PARAMETERS ##
-    ################
-
-    model = Model(name="model")
-    if SETTINGS.show_gurobi_output == False:
-        model.Params.LogToConsole = 0
-    model.setParam('Threads', SETTINGS.gurobi_threads)
-    model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
-
-    I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
-    R = {r : requests[r] for r in range(len(requests))}                 # Set of all requests.
-
-    # All antigens mapped to their index in the list of considered antigens.
-    antigens = PARAMS.major + PARAMS.minor
-    A = {antigens[k] : k for k in range(len(antigens))}   
-    A_minor = {k : A[k] for k in PARAMS.minor}
-    A_no_Fyb = {k : A[k] for k in antigens if k != "Fyb"}
-
-    # TODO extend to patgroups scenario where matches can also be incompatible on minor antigens
-    # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
-    C = compute_compatibility(SETTINGS, PARAMS, I, R)
-
-    # For each request r∈R, t[r] = 1 if the issuing day is today, 0 if it lies in the future.
-    t = [1 - min(1, requests[r].issuing_day - day) for r in R.keys()]
-
-    # All patient groups mapped to their index in the list of patient groups.
-    P = {PARAMS.patgroups[i] : i for i in range(len(PARAMS.patgroups))}
-
-    # Mismatching weights for each antigen.
-    if "patgroups" in SETTINGS.strategy:
-        w = np.array(PARAMS.patgroup_weights.loc[PARAMS.patgroups, antigens])
-    elif "relimm" in SETTINGS.strategy:
-        w = np.array(PARAMS.relimm_weights[antigens])[0]
-    elif "major" in SETTINGS.strategy:
-        w = np.array([0] * len(antigens))
-    max_age = PARAMS.max_age    # Maximum shelf life of products in inventory    
-
-
-    ###############
-    ## VARIABLES ##
-    ###############
-
-    # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
-    # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
-    # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
-
-    x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
-    y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
-    z = model.addVars(len(R), len(A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
-
-    model.update()
-
-
-    #################
-    ## CONSTRAINTS ##
-    #################
-
-
-    # Force y[r] to 1 if not all requested units are satisfied.
-    model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in R.keys())
-
-    # For each inventory product i, ensure that i can not be issued more than once.
-    model.addConstrs(quicksum(x[i,r] for r in R.keys()) <= 1 for i in I.keys())
-
-    # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
-    model.addConstrs(x[i,r] <= C[i,r] for i in I.keys() for r in R.keys())
-
-    # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
-    model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in A_no_Fyb.values())
-
-    # A request can only be mismatched on Fyb if it is positive for Fya.
-    model.addConstrs(quicksum(x[i,r] * I[i].vector[A["Fyb"]] * (1 - R[r].vector[A["Fyb"]]) * R[r].vector[A["Fya"]] for i in I.keys()) <= z[r,A["Fyb"]] * R[r].num_units for r in R.keys())  
-
-
-    ################
-    ## OBJECTIVES ##
-    ################
-
-    # Assign a higher shortage penalty to requests with today as their issuing date.
-    model.setObjectiveN(expr = quicksum(y[r] * ((3 * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages") 
-    if "patgroups" in SETTINGS.strategy:
-        model.setObjectiveN(expr = quicksum(
-                                        quicksum(z[r,k] * w[P[R[r].patgroup],k] for k in A.values()) +                                                  # Mismatches on minor antigens.
-                                        quicksum(
-                                            quicksum(x[i,r] * w[P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in A_minor.values())  # Minor antigen substitution.
-                                            + (math.exp(-4.852 * I[i].age / max_age) * x[i,r])                                                          # FIFO penalties.
-                                            + ((I[i].get_usability(PARAMS) - R[r].get_usability(PARAMS)) * x[i,r])                                      # Product usability on major antigens.
-                                        for i in I.keys()) 
-                                    for r in R.keys()), index=1, priority=0, name="other")
-    else:
-        model.setObjectiveN(expr = quicksum(
-                                        quicksum(z[r,k] * w[k] for k in A.values()) +                                                   # Mismatches on minor antigens.
-                                        quicksum(
-                                            quicksum(x[i,r] * w[k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in A_minor.values())   # Minor antigen substitution.
-                                            + (math.exp(-4.852 * I[i].age / max_age) * x[i,r])                                          # FIFO penalties.
-                                            + ((I[i].get_usability(PARAMS) - R[r].get_usability(PARAMS)) * x[i,r])                      # Product usability on major antigens.
-                                        for i in I.keys()) 
-                                    for r in R.keys()), index=1, priority=0, name="other")
-    
-    # Minimize the objective functions.
-    model.ModelSense = GRB.MINIMIZE
-
-    stop = time.perf_counter()
-    print(f"model initialization: {(stop - start):0.4f} seconds")
-
-
-    ##############
-    ## OPTIMIZE ##
-    ##############
-
-    start = time.perf_counter()
-    model.optimize()
-    stop = time.perf_counter()
-    calc_time = stop - start
-    print(f"optimize: {calc_time:0.4f} seconds")
-
-    return model, calc_time
-
-
-def extract_model_solution(SETTINGS, PARAMS, df, model, inventory, requests, episode, day):
-
-    start = time.perf_counter()
-
-    # Get the values of the model variable as found for the optimal solution.
-    x = np.zeros([len(inventory), len(requests)])
-    y = np.zeros([len(requests)])
-    z = np.zeros([len(requests), len(PARAMS.major + PARAMS.minor)])
-    for var in model.getVars():
-        name = re.split(r'\W+', var.varName)[0]
-        if name == "x":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            index1 = int(re.split(r'\W+', var.varName)[2])
-            x[index0, index1] = var.X
-        if name == "y":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            y[index0] = var.X
-        if name == "z":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            index1 = int(re.split(r'\W+', var.varName)[2])
-            z[index0, index1] = var.X
-
-    # Write the values found to local files.
-    # with open(SETTINGS.generate_filename("results", "ilp") + f"x_{SETTINGS.strategy}{SETTINGS.model_name}_{SETTINGS.demand_scenario[:3]}_{episode}-{day}.pickle", "wb") as f:
-    #     pickle.dump(x, f)
-    # with open(SETTINGS.generate_filename("results", "ilp") + f"y_{SETTINGS.strategy}{SETTINGS.model_name}_{SETTINGS.demand_scenario[:3]}_{e}.pickle", "wb") as f:
-    #     pickle.dump(y, f)
-    # with open(SETTINGS.generate_filename("results", "ilp") + f"z_{SETTINGS.strategy}{SETTINGS.model_name}_{SETTINGS.demand_scenario[:3]}_{e}.pickle", "wb") as f:
-    #     pickle.dump(z, f)
-    
-    df.loc[day,"nvars"] = sum([np.product(var.shape) for var in [x, y, z]])
-
-    stop = time.perf_counter()
-    print(f"loading model results: {(stop - start):0.4f} seconds")
-
-    return df, x, y, z
-
-
-def log_results(SETTINGS, PARAMS, df, model, inventory, requests, day, x=[], y=[], z=[]):
-
-    antigens = PARAMS.major + PARAMS.minor
-    ABOD_names = PARAMS.ABOD
-    patgroups = PARAMS.patgroups
-    ethnicities = ["Caucasian", "African", "Asian"]
-    r_today = [r for r in range(len(requests)) if requests[r].issuing_day == day]
-    requests_today = [rq for rq in requests if rq.issuing_day == day]
-
-    I = {i : inventory[i] for i in range(len(inventory))}
-    R = {r : requests[r] for r in range(len(requests))}
-    A = {antigens[k] : k for k in range(len(antigens))}
-    A_minor = {k : A[k] for k in PARAMS.minor}
-    t = [1 - min(1, requests[r].issuing_day - day) for r in R.keys()]
-    P = {PARAMS.patgroups[i] : i for i in range(len(PARAMS.patgroups))}
-
-    if "patgroups" in SETTINGS.strategy:
-        w = np.array(PARAMS.patgroup_weights.loc[PARAMS.patgroups, antigens])
-    elif "relimm" in SETTINGS.strategy:
-        w = np.array(PARAMS.relimm_weights[antigens])[0]
-    elif "major" in SETTINGS.strategy:
-        w = np.array([0] * len(antigens))
-
-    df.loc[day,"num patients"] = len(r_today)
-    df.loc[day,"num units requested"] = sum([rq.num_units for rq in requests_today])
-    for eth in ethnicities:
-        df.loc[day,f"num {eth} patients"] = sum([1 for rq in requests_today if rq.ethnicity == eth])
-    for p in patgroups:
-        df.loc[day,f"num {p} patients"] = sum([1 for rq in requests_today if rq.patgroup == p])
-        df.loc[day,f"num units requested {p}"] = sum([rq.num_units for rq in requests_today if rq.patgroup == p])
-    
-    for u in range(1,5):
-        df.loc[day,f"num requests {u} units"] = sum([1 for rq in requests_today if rq.num_units == u])
-
-    df.loc[day,"num supplied products"] = sum([1 for ip in inventory if ip.age == 0])
-    for major in ABOD_names:
-        df.loc[day,f"num supplied {major}"] = sum([1 for ip in inventory if ip.major == major and ip.age == 0])
-        df.loc[day,f"num requests {major}"] = sum([1 for rq in requests_today if rq.major == major])
-        df.loc[day,f"num {major} in inventory"] = sum([1 for ip in inventory if ip.major == major])
-
-    # If an optimal solution was found.
-    if model.status == 2:
+    def log_results(self, SETTINGS, PARAMS, df, model, hospital, day, x=[], y=[], z=[]):
 
         start = time.perf_counter()
 
-        df.loc[day,"objval shortages"] = sum(y[r] * ((3 * t[r]) + 1) for r in R.keys())
-        df.loc[day,"objval fifo"] = sum(math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r] for i in I.keys() for r in R.keys())
-        df.loc[day,"objval usability"] = sum((I[i].get_usability(PARAMS) - R[r].get_usability(PARAMS)) * x[i,r] for i in I.keys() for r in R.keys())
+        name = hospital.name
+
+        I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}
+        R = {r : hospital.requests[r] for r in range(len(hospital.requests))}
+
+        ABOD_names = PARAMS.ABOD
+        patgroups = PARAMS.patgroups
+        ethnicities = ["Caucasian", "African", "Asian"]
+        r_today = [r for r in R.keys() if R[r].issuing_day == day]
+
+        df.loc[(day,name),"num patients"] = len(r_today)
+        df.loc[(day,name),"num units requested"] = sum([R[r].num_units for r in r_today])
+        for eth in ethnicities:
+            df.loc[(day,name),f"num {eth} patients"] = sum([1 for r in r_today if R[r].ethnicity == eth])
+        for p in patgroups:
+            df.loc[(day,name),f"num {p} patients"] = sum([1 for r in r_today if R[r].patgroup == p])
+            df.loc[(day,name),f"num units requested {p}"] = sum([R[r].num_units for r in r_today if R[r].patgroup == p])
+            df.loc[(day,name),f"num allocated at dc {p}"] = sum([R[r].num_units * R[r].allocated_from_dc for r in [r for r in R.keys() if R[r].issuing_day == (day + 1)] if R[r].patgroup == p])
+        
+        for u in range(1,5):
+            df.loc[(day,name),f"num requests {u} units"] = sum([1 for r in r_today if R[r].num_units == u])
+
+        df.loc[(day,name),"num supplied products"] = sum([1 for ip in I.values() if ip.age == 0])
+        for major in ABOD_names:
+            df.loc[(day,name),f"num supplied {major}"] = sum([1 for ip in I.values() if ip.major == major and ip.age == 0])
+            df.loc[(day,name),f"num requests {major}"] = sum([1 for r in r_today if R[r].major == major])
+            df.loc[(day,name),f"num {major} in inventory"] = sum([1 for ip in I.values() if ip.major == major])
+
+        df.loc[(day,name),"objval shortages"] = sum(y[r] * (((len(R)-1) * (1 - min(1, R[r].issuing_day - day))) + 1) for r in R.keys())
+        df.loc[(day,name),"objval fifo"] = sum(math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r] for i in I.keys() for r in R.keys())
+        df.loc[(day,name),"objval usability"] = sum((I[i].get_usability(PARAMS, [hospital]) - R[r].get_usability(PARAMS, [hospital])) * x[i,r] for i in I.keys() for r in R.keys())
         if "patgroups" in SETTINGS.strategy:
-            df.loc[day,"objval mismatches"] = sum(z[r,k] * w[P[R[r].patgroup],k] for r in R.keys() for k in A.values())
-            df.loc[day,"objval substitution"] = sum(x[i,r] * w[P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for i in I.keys() for r in R.keys() for k in A_minor.values())
+            df.loc[(day,name),"objval mismatches"] = sum(z[r,k] * self.w[self.P[R[r].patgroup],k] for r in R.keys() for k in self.A.values())
+            df.loc[(day,name),"objval substitution"] = sum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for i in I.keys() for r in R.keys() for k in self.A_minor.values())
         else:
-            df.loc[day,"objval mismatches"] = sum(z[r,k] * w[k] for r in R.keys() for k in A.values())
-            df.loc[day,"objval substitution"] = sum(x[i,r] * w[k] * (1 - I[i].vector[k]) * R[r].vector[k] for i in I.keys() for r in R.keys() for k in A_minor.values())
+            df.loc[(day,name),"objval mismatches"] = sum(z[r,k] * self.w[k] for r in R.keys() for k in self.A.values())
+            df.loc[(day,name),"objval substitution"] = sum(x[i,r] * self.w[k] * (1 - I[i].vector[k]) * R[r].vector[k] for i in I.keys() for r in R.keys() for k in self.A_minor.values())
 
         xi = x.sum(axis=1)  # For each inventory product i∈I, xi[i] = 1 if the product is issued, 0 otherwise.
         xr = x.sum(axis=0)  # For each request r∈R, xr[r] = the number of products issued to this request.
@@ -349,41 +78,669 @@ def log_results(SETTINGS, PARAMS, df, model, inventory, requests, day, x=[], y=[
         for r in r_today:
             # Get all products from inventory that were issued to request r.
             issued = np.where(x[:,r]==1)[0]
-            rq = requests[r]
+            rq = R[r]
 
-            mismatch = {ag:0 for ag in antigens}
-            for ip in [inventory[i] for i in issued]:
+            mismatch = {ag:0 for ag in self.antigens}
+            for ip in [I[i] for i in issued]:
                 age_sum += ip.age
                 issued_sum += 1
-                df.loc[day,f"{ip.major} to {rq.major}"] += 1
-                df.loc[day,f"{ip.ethnicity} to {rq.ethnicity}"] += 1
+                df.loc[(day,name),f"{ip.major} to {rq.major}"] += 1
+                df.loc[(day,name),f"{ip.ethnicity} to {rq.ethnicity}"] += 1
             
                 # Get all antigens k where product i and request r have a mismatch.
-                for ag in [antigens[k] for k in range(len(antigens)) if ip.vector[k] > rq.vector[k]]:
+                for ag in [self.antigens[k] for k in range(len(self.antigens)) if ip.vector[k] > rq.vector[k]]:
                     # Fy(a-b-) should only be matched on Fy(a), not on Fy(b). -> Fy(b-) only mismatch when Fy(a+)
-                    if (ag != "Fyb") or (rq.vector[antigens.index("Fya")] == 1):    
+                    if (ag != "Fyb") or (rq.vector[self.antigens.index("Fya")] == 1):    
                         mismatch[ag] = 1
-                        df.loc[day,[f"num mismatched units {rq.patgroup} {ag}"]] += 1
+                        df.loc[(day,name),[f"num mismatched units {rq.patgroup} {ag}"]] += 1
 
-            for ag in antigens:
-                df.loc[day,[f"num mismatches {rq.patgroup} {ag}"]] += mismatch[ag]
-                df.loc[day,[f"num mismatches {rq.ethnicity} {ag}"]] += mismatch[ag]
+            for ag in self.antigens:
+                df.loc[(day,name),[f"num mismatches {rq.patgroup} {ag}"]] += mismatch[ag]
+                df.loc[(day,name),[f"num mismatches {rq.ethnicity} {ag}"]] += mismatch[ag]
 
-        df.loc[day,f"avg issuing age"] = age_sum / max(1, issued_sum)
+        df.loc[(day,name),f"avg issuing age"] = age_sum / max(1, issued_sum)
 
-        for ip in [inventory[i] for i in range(len(inventory)) if (xi[i] == 0) and (inventory[i].age >= (PARAMS.max_age-1))]:
-            df.loc[day,"num outdates"] += 1
-            df.loc[day,f"num outdates {ip.major}"] += 1
+        for ip in [I[i] for i in I.keys() if (xi[i] == 0) and (I[i].age >= (PARAMS.max_age-1))]:
+            df.loc[(day,name),"num outdates"] += 1
+            df.loc[(day,name),f"num outdates {ip.major}"] += 1
 
+        df.loc[(day,name),"num unavoidable shortages"] = max(0, sum([R[r].num_units for r in r_today]) - len(I))
         for r in [r for r in r_today if y[r] == 1]:
-            rq = requests[r]
-            df.loc[day,"num shortages"] += 1
-            df.loc[day,f"num shortages {rq.major}"] += 1
-            df.loc[day,f"num shortages {rq.patgroup}"] += 1
-            df.loc[day,f"num {rq.patgroup} {int(rq.num_units - xr[r])} units short"] += 1
+            rq = R[r]
+            df.loc[(day,name),"num shortages"] += 1
+            df.loc[(day,name),f"num shortages {rq.major}"] += 1
+            df.loc[(day,name),f"num shortages {rq.patgroup}"] += 1
+            df.loc[(day,name),f"num {rq.patgroup} {int(rq.num_units - xr[r])} units short"] += 1
         
         stop = time.perf_counter()
-        print(f"writing results to dataframe: {(stop - start):0.4f} seconds")
+        # print(f"writing results to dataframe: {(stop - start):0.4f} seconds")
 
-    
-    return df
+        
+        return df 
+
+
+    def get_mismatch_penalty(self, SETTINGS, hospital, r, z):
+        
+        if "patgroups" in SETTINGS.strategy:
+            return sum(z[r,k] * self.w[self.P[hospital.requests[r].patgroup],k] for k in self.A.values())
+        else:
+            return sum(z[r,k] * self.w[k] for k in self.A.values())
+
+
+    def minrar_single_hospital(self, SETTINGS, PARAMS, hospital, day):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
+        R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
+
+        bi = [I[i].get_usability(PARAMS, [hospital]) for i in I.keys()]
+        br = [R[r].get_usability(PARAMS, [hospital]) for r in R.keys()]
+
+        # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
+        C = compatibility(SETTINGS, PARAMS, I, R)
+        T = timewise_possible(SETTINGS, PARAMS, I, R, day)
+
+        # For each request r∈R, t[r] = 1 if the issuing day is today, 0 if it lies in the future.
+        t = [1 - min(1, R[r].issuing_day - day) for r in R.keys()]
+
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
+        # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
+        # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
+
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+
+        # Force y[r] to 1 if not all requested units are satisfied.
+        model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in R.keys())
+
+        # For each inventory product i∈I, ensure that i can not be issued more than once.
+        model.addConstrs(quicksum(x[i,r] for r in R.keys()) <= 1 for i in I.keys())
+
+        # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
+        # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
+        model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
+
+        # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in self.A_no_Fyb.values())
+
+        # A request can only be mismatched on Fyb if it is positive for Fya.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[self.A["Fyb"]] * (1 - R[r].vector[self.A["Fyb"]]) * R[r].vector[self.A["Fya"]] for i in I.keys()) <= z[r,self.A["Fyb"]] * R[r].num_units for r in R.keys())  
+
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        # Assign a higher shortage penalty to requests with today as their issuing date.
+        model.setObjectiveN(expr = quicksum(y[r] * (((len(R)-1) * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages") 
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(
+                                            quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +                                                  # Mismatches on minor antigens.
+                                            quicksum(
+                                                quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in self.A_minor.values())  # Minor antigen substitution.
+                                                + (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                                          # FIFO penalties.
+                                                + ((bi[i] - br[r]) * x[i,r])                                                                                # Product usability on major antigens.
+                                            for i in I.keys()) 
+                                        for r in R.keys()), index=1, priority=0, name="other")
+        else:
+            model.setObjectiveN(expr = quicksum(
+                                            quicksum(z[r,k] * self.w[k] for k in self.A.values()) +                                                   # Mismatches on minor antigens.
+                                            quicksum(
+                                                quicksum(x[i,r] * self.w[k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in self.A_minor.values())   # Minor antigen substitution.
+                                                + (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                          # FIFO penalties.
+                                                + ((bi[i] - br[r]) * x[i,r])                                                                # Product usability on major antigens.
+                                            for i in I.keys()) 
+                                        for r in R.keys()), index=1, priority=0, name="other")
+        
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+
+
+    def minrar_hospital_before_dc_allocation(self, SETTINGS, PARAMS, day, hospital):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
+        R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
+
+        # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
+        C = compatibility(SETTINGS, PARAMS, I, R)
+        T = timewise_possible(SETTINGS, PARAMS, I, R, day)
+
+        # For each request r∈R, t[r] = 1 if the issuing day is today, 0 if it lies in the future.
+        t = [1 - min(1, R[r].issuing_day - day) for r in R.keys()]
+
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
+        # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
+        # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
+
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+        # Force y[r] to 1 if not all requested units are satisfied.
+        model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in R.keys())
+
+        # Make sure that each request r∈R does not receive more products than the number of units requested.
+        model.addConstrs(quicksum(x[i,r] for i in I.keys()) <= R[r].num_units for r in R.keys())
+
+        # For each inventory product i∈I, ensure that i can not be issued more than once.
+        model.addConstrs(quicksum(x[i,r] for r in R.keys()) <= 1 for i in I.keys())
+
+        # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
+        # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
+        model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
+
+        # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in self.A_no_Fyb.values())
+
+        # A request can only be mismatched on Fyb if it is positive for Fya.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[self.A["Fyb"]] * (1 - R[r].vector[self.A["Fyb"]]) * R[r].vector[self.A["Fya"]] for i in I.keys()) <= z[r,self.A["Fyb"]] * R[r].num_units for r in R.keys())  
+
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        # Assign a higher shortage penalty to requests with today as their issuing date.
+        # TODO instead of times 4, the penalties for today's requests might be multiplied by len(R).
+        model.setObjectiveN(expr = quicksum(y[r] * (((len(R)-1) * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages") 
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values() for r in R.keys())                             # Mismatches on minor antigens.
+                                     + quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in R.keys() if R[r].patgroup in ["Other", "Wu45"]] for k in self.A_minor.values()),  # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        else:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[k] for k in self.A.values() for r in R.keys())                                                   # Mismatches on minor antigens.
+                                     + quicksum(x[i,r] * self.w[k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in R.keys() if R[r].patgroup in ["Other", "Wu45"]] for k in self.A_minor.values()),  # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+
+
+    def allocate_propagated_requests_from_dc(self, SETTINGS, PARAMS, day, inventory, requests):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
+        R = {r : requests[r][0] for r in range(len(requests))}              # Set of all requests.
+
+        # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
+        C = compatibility(SETTINGS, PARAMS, I, R)
+        T = timewise_possible(SETTINGS, PARAMS, I, R, day)
+
+        # For each request r∈R, t[r] = 1 if the issuing day is tomorrow, 0 if it lies further in the future.
+        t = [1 - min(1, R[r].issuing_day - (day+1)) for r in R.keys()]
+
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
+        # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
+        # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
+
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+        # Force y[r] to 1 if not all requested units are satisfied.
+        model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in R.keys())
+
+        # Make sure that each request r∈R does not receive more products than the number of units requested.
+        model.addConstrs(quicksum(x[i,r] for i in I.keys()) <= R[r].num_units for r in R.keys())
+
+        # For each inventory product i∈I, ensure that i can not be issued more than once.
+        model.addConstrs(quicksum(x[i,r] for r in R.keys()) <= 1 for i in I.keys())
+
+        # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
+        # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
+        model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
+
+        # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in self.A_no_Fyb.values())
+
+        # A request can only be mismatched on Fyb if it is positive for Fya.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[self.A["Fyb"]] * (1 - R[r].vector[self.A["Fyb"]]) * R[r].vector[self.A["Fya"]] for i in I.keys()) <= z[r,self.A["Fyb"]] * R[r].num_units for r in R.keys())  
+
+        # If a product is allocated from the dc's inventory, the mismatch penalty should improve w.r.t. the match made within the hospital.
+        if "patgroups" in SETTINGS.strategy:
+            model.addConstrs(quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) <= R[r].best_mismatch_penalty * 0.999 for r in R.keys())
+        else:
+            model.addConstrs(quicksum(z[r,k] * self.w[k] for k in self.A.values()) <= R[r].best_mismatch_penalty * 0.999 for r in R.keys())
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        # Assign a higher shortage penalty to requests with tomorrow as their issuing date.
+        # TODO instead of times 4, the penalties for today's requests might be multiplied by len(R).
+        model.setObjectiveN(expr = quicksum(y[r] * (((len(R)-1) * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages") 
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values() for r in R.keys())                 # Mismatches on minor antigens.
+                                     + quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in R.keys() if R[r].patgroup =="Wu45"] for k in self.A_minor.values()),  # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        else:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[k] for k in self.A.values() for r in R.keys())                                       # Mismatches on minor antigens.
+                                     + quicksum(x[i,r] * self.w[k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in R.keys() if R[r].patgroup =="Wu45"] for k in self.A_minor.values()),  # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+
+
+    def mirar_hospital_after_dc_allocation(self, SETTINGS, PARAMS, day, hospital):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
+        R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
+        r_remaining = [r for r in R.keys() if R[r].allocated_from_dc == 0]
+
+        bi = [I[i].get_usability(PARAMS, [hospital]) for i in I.keys()]
+        br = [R[r].get_usability(PARAMS, [hospital]) for r in R.keys()]
+
+        # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
+        C = compatibility(SETTINGS, PARAMS, I, R)
+        T = timewise_possible(SETTINGS, PARAMS, I, R, day)
+
+        # For each request r∈R, t[r] = 1 if the issuing day is today, 0 if it lies in the future.
+        t = [1 - min(1, R[r].issuing_day - day) for r in R.keys()]
+
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
+        # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
+        # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
+
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+
+        # Force y[r] to 1 if not all requested units are satisfied.
+        model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in r_remaining)
+
+        # For each inventory product i∈I, ensure that i can not be issued more than once.
+        model.addConstrs(quicksum(x[i,r] for r in r_remaining) <= 1 for i in I.keys())
+
+        # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
+        # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
+        model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in r_remaining)
+
+        # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in r_remaining for k in self.A_no_Fyb.values())
+
+        # A request can only be mismatched on Fyb if it is positive for Fya.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[self.A["Fyb"]] * (1 - R[r].vector[self.A["Fyb"]]) * R[r].vector[self.A["Fya"]] for i in I.keys()) <= z[r,self.A["Fyb"]] * R[r].num_units for r in r_remaining)  
+
+        # The mismatch penalty should not be worse than already found to be possible.
+        if "patgroups" in SETTINGS.strategy:
+            model.addConstrs(quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) <= R[r].best_mismatch_penalty for r in r_remaining)
+        else:
+            model.addConstrs(quicksum(z[r,k] * self.w[k] for k in self.A.values()) <= R[r].best_mismatch_penalty for r in r_remaining)
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        # Assign a higher shortage penalty to requests with today as their issuing date.
+        # TODO instead of times 4, the penalties for today's requests might be multiplied by len(R).
+        model.setObjectiveN(expr = quicksum(y[r] * (((len(R)-1) * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages")
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(
+                                            quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +                                           # Mismatches on minor antigens.
+                                                quicksum(
+                                                    (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                                         # FIFO penalties.
+                                                    + ((bi[i] - br[r]) * x[i,r])                                                                                    # Product usability on major antigens.
+                                                for i in I.keys()) 
+                                            for r in r_remaining)
+                                        + quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in r_remaining if R[r].patgroup in ["Other", "Wu45"]] for k in self.A_minor.values()),  # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        else:
+            model.setObjectiveN(expr = quicksum(
+                                            quicksum(z[r,k] * self.w[k] for k in self.A.values()) +                                                                  # Mismatches on minor antigens.
+                                                quicksum(
+                                                    (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                                          # FIFO penalties.
+                                                    + ((bi[i] - br[r]) * x[i,r])                                                                                     # Product usability on major antigens.
+                                                for i in I.keys()) 
+                                            for r in r_remaining)
+                                        + quicksum(x[i,r] * self.w[k] * 2 * (1 - I[i].vector[k]) * R[r].vector[k] 
+                                        for i in I.keys() for r in [r for r in r_remaining if R[r].patgroup in ["Other", "Wu45"]] for k in self.A_minor.values()),   # Minor antigen substitution.
+                                        index=1, priority=0, name="other")
+        
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+
+
+    def allocate_remaining_supply_from_dc(self, SETTINGS, PARAMS, day, inventory, hospitals, supply_sizes, allocations_from_dc):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
+        H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
+        bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
+
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # s: For each inventory product i∈I, x[i,h] = 1 product i will be shipped to hospital h.
+        x = model.addVars(len(I), len(hospitals), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+        # Force x[i,h] to 1 if product i∈I was already allocated to hospital h∈H in the previous optimization.
+        model.addConstrs(x[i,h] >= allocations_from_dc[i,h] for i in I.keys() for h in H.keys())
+
+        # Make sure the number of supplied products is at least the necessary amount to restock each hospital completely.
+        model.addConstrs(quicksum(x[i,h] for i in I.keys()) >= supply_sizes[h] for h in H.keys())
+
+        # For each inventory product i∈I, ensure that i can not be allocated more than once.
+        model.addConstrs(quicksum(x[i,h] for h in H.keys()) <= 1 for i in I.keys())
+
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        model.setObjective(expr = quicksum((math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,h])                          # FIFO penalties.
+                                            + (bi[i] * x[i,h])                                                              # Product usability on major antigens.
+                                            for i in I.keys() for h in H.keys()))
+
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+
+
+    def minrar_offline(self, SETTINGS, PARAMS, hospital, days):
+
+        start = time.perf_counter()
+
+        ################
+        ## PARAMETERS ##
+        ################
+
+        model = Model(name="model")
+        if SETTINGS.show_gurobi_output == False:
+            model.Params.LogToConsole = 0
+        model.setParam('Threads', SETTINGS.gurobi_threads)
+        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+
+        I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
+        R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
+        I_consecutive_pairs = [(i,i+1) for i in range(len(hospital.inventory)-1)]
+
+        # I x R matrix containing a 1 if product i∈I is compatible with request r∈R, 0 otherwise.
+        C = compatibility(SETTINGS, PARAMS, I, R)
+
+        ###############
+        ## VARIABLES ##
+        ###############
+
+        # x: For each request r∈R and inventory product i∈I, x[i,r] = 1 if r is satisfied by i, 0 otherwise.
+        # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
+        # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
+
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+
+        # o: For each inventory product i∈I, o[i] = 1 if i is outdated before being issued, 0 otherwise.
+        # a: For each inventory product i∈I, a[i] contains the day that product i becomes available.
+        # p: For each inventory product i∈I and d∈day, p[i,d] = 1 if product i is present in the inventory on day d, 0 otherwise.
+
+        o = model.addVars(len(I), name='o', vtype=GRB.BINARY, lb=0, ub=1)
+        a = model.addVars(len(I), name='a', vtype=GRB.INTEGER, lb=0, ub=len(days))
+        p = model.addVars(len(I), len(days), name='p', vtype=GRB.BINARY, lb=0, ub=1)
+
+        model.update()
+
+
+        #################
+        ## CONSTRAINTS ##
+        #################
+
+        # The products should become available in the same order as sampled.
+        model.addConstrs(a[i] <= a[j] for i,j in [(i,j) for (i,j) in I_consecutive_pairs])
+
+        # A product can only be assigned to a request if it is present in inventory at the day request r is issued.
+        model.addConstrs(x[i,r] <= p[i,R[r].issuing_day] for i in I.keys() for r in R.keys())
+
+        # A product i can be present in inventory on day d, only if the day is after the product becoming available,
+        # before it outdates, and it is not (yet) issued.
+        model.addConstrs(p[i,d] * a[i] <= d for i in I.keys() for d in days)
+        model.addConstrs(p[i,d] * d <= (a[i] + PARAMS.max_age - 1) for i in I.keys() for d in days)
+        model.addConstrs(p[i,d] * d <= quicksum(x[i,r] * R[r].issuing_day for r in R.keys()) + (o[i] * d) for i in I.keys() for d in days)
+        
+        # At every day during the simulation, the total number of products present in inventory should sum up to the hospital's inventory size.
+        model.addConstrs(quicksum(p[i,d] for i in I.keys()) == hospital.inventory_size for d in days)
+
+        # For each inventory product i∈I, ensure that the product is issued within the period it is available, or it is outdated.
+        # TODO: only for products i that become available more than SETTINGS.max_age days before the end of the simulation? 
+        model.addConstrs(quicksum(x[i,r] for r in R.keys()) + o[i] == 1 for i in I.keys())
+
+        # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
+        # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
+        model.addConstrs(x[i,r] <= C[i,r] for i in I.keys() for r in R.keys())
+
+        # Force y[r] to 1 if not all requested units are satisfied.
+        model.addConstrs(R[r].num_units * y[r] + quicksum(x[i,r] for i in I.keys()) >= R[r].num_units for r in R.keys())
+
+        # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in self.A_no_Fyb.values())
+
+        # A request can only be mismatched on Fyb if it is positive for Fya.
+        model.addConstrs(quicksum(x[i,r] * I[i].vector[self.A["Fyb"]] * (1 - R[r].vector[self.A["Fyb"]]) * R[r].vector[self.A["Fya"]] for i in I.keys()) <= z[r,self.A["Fyb"]] * R[r].num_units for r in R.keys())  
+
+
+        ################
+        ## OBJECTIVES ##
+        ################
+
+        # Assign a higher shortage penalty to requests with today as their issuing date.
+        model.setObjectiveN(expr = quicksum(y[r] for r in R.keys()), index=0, priority=1, name="shortages") 
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values() for r in R.keys()) +  # Mismatches on minor antigens.
+                                       quicksum(o[i] for i in I.keys()) * len(R), index=1, priority=0, name="other")                    # Number of outdates.   TODO: times len(R) ???
+        else:
+            model.setObjectiveN(expr = quicksum(z[r,k] * self.w[k] for k in self.A.values() for r in R.keys()) +                        # Mismatches on minor antigens.
+                                       quicksum(o[i] for i in I.keys()) * len(R), index=1, priority=0, name="other")                    # Number of outdates.   TODO: times len(R) ???
+        
+        # Minimize the objective functions.
+        model.ModelSense = GRB.MINIMIZE
+
+        stop = time.perf_counter()
+        # print(f"model initialization: {(stop - start):0.4f} seconds")
+
+
+        ##############
+        ## OPTIMIZE ##
+        ##############
+
+        start = time.perf_counter()
+        model.optimize()
+        stop = time.perf_counter()
+        # print(f"optimize: {(stop - start):0.4f} seconds")
+
+        return model
+

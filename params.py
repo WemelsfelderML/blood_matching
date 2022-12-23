@@ -4,11 +4,12 @@ class Params():
     
     def __init__(self, SETTINGS):
 
+
         ####################
         # BLOOD PARAMETERS #
         ####################
 
-        self.max_age = 35
+        self.max_age = 3
 
         self.ABOD = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
         self.major = ["A", "B", "D"]
@@ -23,7 +24,6 @@ class Params():
         #     self.relimm_weights = pd.read_csv(SETTINGS.home_dir + "data/relimm_patweights.csv", index_col="patgroup")
         # else:
         self.relimm_weights = pd.read_csv(SETTINGS.home_dir + "data/relimm_weights.csv")
-        
         self.patgroup_weights = pd.read_csv(SETTINGS.home_dir + "data/patgroup_weights.csv", index_col="patgroup")
 
 
@@ -33,13 +33,14 @@ class Params():
 
         self.patgroups = ["Other", "Wu45", "MDS", "Thal", "AIHA", "ALA", "SCD"]
 
-        if SETTINGS.demand_scenario == "Other":
-            self.patgroup_distr = [1, 0, 0, 0, 0, 0, 0]
-        elif SETTINGS.demand_scenario == "regional":
-            self.patgroup_distr = [0.886867, 0.049352, 0, 0.008607969, 0.014933, 0.031632, 0.008607969]
-        elif SETTINGS.demand_scenario == "university":
-            self.patgroup_distr = [0.64605, 0.10250, 0.04542, 0.05665, 0.02731, 0.06543, 0.05665]
+        # TODO hier een pandas dataframe van maken
+        self.patgroup_distr = {
+            "Other" : {"Other":1, "Wu45":0, "MDS":0, "Thal":0, "AIHA":0, "ALA":0, "SCD":0},
+            "regional" : {"Other":0.886867, "Wu45":0.049352, "MDS":0, "Thal":0.008607969, "AIHA":0.014933, "ALA":0.031632, "SCD":0.008607969},
+            "university" : {"Other":0.64605, "Wu45":0.10250, "MDS":0.04542, "Thal":0.05665, "AIHA":0.02731, "ALA":0.06543, "SCD":0.05665}
+        }
 
+        # Each column specifies the probability of a request becoming known 0, 1, 2, etc. days in advance w.r.t. its issuing date.
         self.request_lead_time_probabilities = {
             "Other" : [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 0, 0, 0, 0, 0, 0, 0],     # Other = uniform between [0,7] (CHANGE 3)
             "Wu45" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                # Wu45 = 50/50 on the day or one day ahead.

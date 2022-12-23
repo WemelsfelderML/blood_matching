@@ -31,7 +31,7 @@ def generate_supply(SETTINGS, PARAMS):
     while os.path.exists(SETTINGS.home_dir + f"supply/{size}/{name}_{i}.csv"):
         i += 1
 
-    for _ in range(SETTINGS.episodes):
+    for _ in range(SETTINGS.episodes[0],SETTINGS.episodes[1]):
 
         print(f"Generating supply '{name}_{i}'.")
 

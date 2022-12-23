@@ -2,7 +2,7 @@ from settings import *
 from params import *
 from requests import *
 from inventory import *
-from minrar import *
+from simulation import *
 from reinforcement_learning import *
 
 def main():
@@ -11,21 +11,26 @@ def main():
     PARAMS = Params(SETTINGS)
 
     # If a directory to store log files or results does not yet exist, make one.
-    for path in ["results"]:    # "log", "log/nn", "log/ilp"
+    for path in ["results", "results/"+SETTINGS.model_name]:    # "log", "log/nn", "log/ilp"
         check_dir_existence(path)
 
-
     if SETTINGS.mode == "demand":
-        generate_demand(SETTINGS, PARAMS)
+        for _ in range(SETTINGS.n_hospitals["regional"]):
+            generate_demand(SETTINGS, PARAMS, "regional", 50)
+        for _ in range(SETTINGS.n_hospitals["university"]):
+            generate_demand(SETTINGS, PARAMS, "university", 100)
 
     elif SETTINGS.mode == "supply":
         generate_supply(SETTINGS, PARAMS)
 
     elif SETTINGS.mode == "optimize":
+
+        # TODO add assert statements to check settings (e.g. number of hospitals should be at least 1).
+
         if SETTINGS.method == "RL":
             reinforcement_learning(SETTINGS, PARAMS)
         elif SETTINGS.method == "ILP":
-            minrar(SETTINGS, PARAMS)
+            simulation(SETTINGS, PARAMS)
         else:
             print("Parameter 'mode' is set to 'optimize', but no existing method for optimization is given. Try 'RL' or 'ILP'.")
     else:

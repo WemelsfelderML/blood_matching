@@ -19,49 +19,49 @@ class Settings():
         # "RL": Use reinforcement learning.
         self.method = "ILP"
 
+        # "on": online optimization.
+        # "off": offline optimization.
+        self.line = "off"
+
          # "train" for training the RL model
         # "test" for running simulations with saved model
         self.RL_mode = "train"
 
-        # Name of the model to be used for saving files (start with _ or leave empty).
-        self.model_name = ""
-
-        #######################
-        # GENERATION SETTINGS #
-        #######################
-
-        # "regional": Use the patient group distribution of the OLVG, a regional hospital.
-        # "university": Use the patient group distribution of the AMC, a university hospital.
-        # "Other": Only sample patients that do not belong to a particular patient group.
-        self.demand_scenario = "university"
+        # Name of the model to be used for saving files.
+        self.model_name = "small test 10 days"
 
 
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
-        self.test_days = 365
+        self.test_days = 10
         self.init_days = 0
 
-        # used for generating supply
-        self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
-        self.supply_size = 40000
-
-        # used for generating demand
-        self.avg_daily_demand = 100
-        self.inventory_size = 3 * self.avg_daily_demand
-
         # self.episodes = 1500
-        self.episodes = 5
+        self.episodes = (0,5)
+
+        # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
+        # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
+        # "university": Use the patient group distribution of the AMC, a university hospital, with average daily demand of 100 products.
+        self.n_hospitals = {
+            "regional" : 1,
+            "university" : 0
+        }
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
-        self.strategy = "patgroups"
+        self.strategy = "relimm"
         self.patgroup_musts = False
 
-        self.demand_scenario_names = [f"regional_{i}" for i in range(5)]
-        self.supply_scenario_names = [f"cau{round(self.donor_eth_distr[0]*100)}_afr{round(self.donor_eth_distr[1]*100)}_asi{round(self.donor_eth_distr[2]*100)}" for i in range(5)]
+
+        ##############################
+        # GENERATING DEMAND / SUPPLY #
+        ##############################
+
+        self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
+        self.supply_size = (self.init_days + self.test_days + 10) * ((self.n_hospitals["regional"] * 50) + (self.n_hospitals["university"] * 100))
 
 
         ##########################
@@ -84,18 +84,18 @@ class Settings():
         # GUROBI OPTIMIZER #
         ####################
 
-        self.show_gurobi_output = False
+        self.show_gurobi_output = True
         self.gurobi_threads = 12
-        self.gurobi_timeout = 60
+        self.gurobi_timeout = 60 * 60
 
 
     # Generate a file name for exporting log or result files.
-    def generate_filename(self, output_type, model_type):
+    def generate_filename(self, output_type):
 
-        return self.home_dir + f"{output_type}/{model_type}_"
+        return self.home_dir + f"{output_type}/{self.model_name}/{self.method.lower()}_"
 
 
-    def create_output_file(self, PARAMS, episode):
+    def initialize_output_dataframe(self, PARAMS, hospitals, episode):
 
         ##########
         # PARAMS #
@@ -112,7 +112,7 @@ class Settings():
         ##########
 
         # General information.
-        header = ["episode", "day", "name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
+        header = ["day", "location", "model name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
 
         # Gurobi optimizer info.
         header += ["gurobi status", "nvars", "calc time"]
@@ -130,37 +130,52 @@ class Settings():
         header += ["avg issuing age"]
         header += [f"{i} to {j}" for i in ABOD_names for j in ABOD_names]
         header += [f"{eth0} to {eth1}" for eth0 in ethnicities for eth1 in ethnicities]
+        header += [f"num allocated at dc {p}" for p in patgroups]
 
         # Matching performance.
         header += ["num outdates"] + [f"num outdates {i}" for i in ABOD_names]
         header += ["num shortages"] + [f"num shortages {i}" for i in ABOD_names]
-        header += [f"num shortages {p}" for p in patgroups] + [f"num {p} {i+1} units short" for p in patgroups for i in range(4)]
+        header += [f"num shortages {p}" for p in patgroups] + [f"num {p} {i+1} units short" for p in patgroups for i in range(4)] + ["num unavoidable shortages"]
         header += [f"num mismatches {p} {k}" for p in patgroups for k in antigens] + [f"num mismatched units {p} {k}" for p in patgroups for k in antigens]
         header += [f"num mismatches {eth} {k}" for eth in ethnicities for k in antigens]
 
         df = pd.DataFrame(columns = header)
-        df["day"] = days
-        df.index = df["day"]
-        df = df.fillna(0).drop(columns=["day"])
+
+        locations = []
+        for hospital in hospitals:
+            locations += [hospital.name] * len(days)
+
+        if len(hospitals) == 1:
+            df["day"] = days
+        else:
+            df["day"] = days * (1 + len(hospitals))
+            locations += [f"dc_{episode}"] * len(days)
+            
+        df["location"] = locations
+
+        df = df.set_index(['day', 'location'])
+        df = df.fillna(0)
 
         ##################
         # ADD BASIC INFO #
         ##################
 
-        df.loc[days,"episode"] = episode
-        df.loc[days,"name"] = self.model_name
-        df.loc[days,"supply scenario"] = f"cau{round(self.donor_eth_distr[0]*100)}_afr{round(self.donor_eth_distr[1]*100)}_asi{round(self.donor_eth_distr[2]*100)}_{episode}"
-        df.loc[days,"demand scenario"] = f"{self.demand_scenario}_{episode}"
-        df.loc[days,"avg daily demand"] = self.avg_daily_demand
-        df.loc[days,"inventory size"] = self.inventory_size
-        df.loc[days,"test days"] = self.test_days
-        df.loc[days,"init days"] = self.init_days
-
+        df.loc[:,"model name"] = self.model_name
+        df.loc[:,"test days"] = self.test_days
+        df.loc[:,"init days"] = self.init_days
+        df.loc[:,"supply scenario"] = f"cau{round(self.donor_eth_distr[0]*100)}_afr{round(self.donor_eth_distr[1]*100)}_asi{round(self.donor_eth_distr[2]*100)}_{episode}"
+        
+        for hospital in hospitals:
+            indices = [(day,hospital.name) for day in days]
+            df.loc[indices,"demand scenario"] = f"{hospital.demand_scenario}_{episode}"
+            df.loc[indices,"avg daily demand"] = hospital.avg_daily_demand
+            df.loc[indices,"inventory size"] = hospital.inventory_size
+        
         return df
 
 
         # i = 0
-        # file = f"{generate_filename("results", "ilp")}_{i}.csv"
+        # file = f"{generate_filename("results")}_{i}.csv"
         # while os.path.exists(file):
         #     i += 1
         #     file = f"{file[:-4]}_{i}.csv"

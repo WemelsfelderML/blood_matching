@@ -79,38 +79,80 @@ class Blood:
         self.patgroup = patgroup
         self.num_units = num_units
         self.issuing_day = issuing_day
+        self.best_mismatch_penalty = 999
+        self.allocated_from_dc = 0
         
 
     # Transform the binary antigen vector to a blood group index
     def vector_to_bloodgroup_index(self):
         return int("".join(str(i) for i in self.vector),2)
 
-    def get_usability(self, PARAMS):
-        
-        ABO_usability = 0
-        RhD_usability = 1
 
-        # TODO this is now hardcoded for the case where SCD patients are Africans and all others are Caucasions, change to more flexible.
-        part_african = PARAMS.patgroup_distr[-1]
+    def get_usability(self, PARAMS, hospitals, antigens = []):
 
-        # Calculate the ABO-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
-        ABO_v = self.vector[:2] 
-        ABO_g = PARAMS.ABO_genotypes
-        for g in range(len(ABO_g)):
-            if all(v <= g for v, g in zip(ABO_v, ABO_g[g])):
-                ABO_usability += PARAMS.ABO_prevalences["African"][g] * part_african
-                ABO_usability += PARAMS.ABO_prevalences["Caucasian"][g] * (1 - part_african)
+        # IMPORTANT: this is now hardcoded for the case where SCD patients are Africans and all others are Caucasions.
+        avg_daily_demand_african = sum([PARAMS.patgroup_distr[hospital.demand_scenario]["SCD"] * hospital.avg_daily_demand for hospital in hospitals])
+        avg_daily_demand_total = sum([hospital.avg_daily_demand for hospital in hospitals])
+        part_african = avg_daily_demand_african / avg_daily_demand_total
 
-        # Calculate the RhD-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
-        # If the considered blood product is RhD negative, usability is always 1. Therefore usability is only calculated when the product is RhD positive.
-        # TODO make more efficient by pre-computing these values and storing them somewhere
-        Dpos = np.array([g[0] for g in PARAMS.Rhesus_genotypes])
-        Dpos_prevalence = sum(np.array(PARAMS.Rhesus_prevalences["African"]) * part_african * Dpos) + sum(np.array(PARAMS.Rhesus_prevalences["Caucasian"]) * (1 - part_african) * Dpos)
-        if self.vector[2] == 1:
-            RhD_usability = Dpos_prevalence
+        if antigens == []:
+            usability_ABO = 0
+            usability_RhD = 1
+
+            # Calculate the ABO-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
+            ABO_v = self.vector[:2] 
+            ABO_g = PARAMS.ABO_genotypes
+            for g in range(len(ABO_g)):
+                if all(v <= g for v, g in zip(ABO_v, ABO_g[g])):
+                    usability_ABO += PARAMS.ABO_prevalences["African"][g] * part_african
+                    usability_ABO += PARAMS.ABO_prevalences["Caucasian"][g] * (1 - part_african)
+
+            # Calculate the RhD-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
+            # If the considered blood product is RhD negative, usability is always 1. Therefore usability is only calculated when the product is RhD positive.
+            # TODO make more efficient by pre-computing these values and storing them somewhere
+            Dpos = np.array([g[0] for g in PARAMS.Rhesus_genotypes])
+            Dpos_prevalence = sum(np.array(PARAMS.Rhesus_prevalences["African"]) * part_african * Dpos) + sum(np.array(PARAMS.Rhesus_prevalences["Caucasian"]) * (1 - part_african) * Dpos)
+            if self.vector[2] == 1:
+                usability_RhD = Dpos_prevalence
+
+            #return the product of all the invdiviual system usabilities to compute the final usabilty
+            return usability_ABO * usability_RhD
+
+        else:
+            antigens = [ag for ag in (PARAMS.major + PARAMS.minor) if ag in antigens]   # Get intersection of all antigens given to consider, and all antigens in the model.
+            usability_ABO = self.get_usability_system(["A", "B"], antigens, PARAMS.ABO_genotypes, PARAMS.ABO_prevalences, part_african)
+            usability_Rhesus = self.get_usability_system(["D", "C", "c", "E", "e"], antigens, PARAMS.Rhesus_genotypes, PARAMS.Rhesus_prevalences, part_african)
+            usability_Kell = self.get_usability_system(["K", "k"], antigens, PARAMS.Kell_genotypes, PARAMS.Kell_prevalences, part_african)
+            usability_MNS = self.get_usability_system(["M", "N", "S", "s"], antigens, PARAMS.MNS_genotypes, PARAMS.MNS_prevalences, part_african)
+            usability_Duffy = self.get_usability_system(["Fya", "Fyb"], antigens, PARAMS.Duffy_genotypes, PARAMS.Duffy_prevalences, part_african)
+            usability_Kidd = self.get_usability_system(["Jka", "Jkb"], antigens, PARAMS.Kidd_genotypes, PARAMS.Kidd_prevalences, part_african)
 
         #return the product of all the invdiviual system usabilities to compute the final usabilty
-        return ABO_usability * RhD_usability
+        return usability_ABO * usability_Rhesus * usability_Kell * usability_MNS * usability_Duffy * usability_Kidd
+
+
+    def get_usability_system(self, system_antigens, antigens, genotypes, prevalences, part_african):
+
+        # TODO: now the usability is only calculated if all antigens of the system are included. Extend this to calculating it for only selected antigens.
+        if all(ag in antigens for ag in system_antigens):
+            
+            usability = 0
+            vector_indices = [antigens.index(k) for k in system_antigens]
+
+            # Calculate the ABO-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
+            vector = [self.vector[i] for i in vector_indices]
+            for g in range(len(genotypes)):
+                if all(v <= g for v, g in zip(vector, genotypes[g])):
+                    usability += prevalences["African"][g] * part_african
+                    usability += prevalences["Caucasian"][g] * (1 - part_african)
+
+            return usability
+
+        else:
+            return 1
+            
+
+
 
 # Obtain the major blood group from a blood antigen vector
 def vector_to_major(vector):
@@ -130,41 +172,35 @@ def vector_to_major(vector):
 
     return major
 
-def compute_compatibility(SETTINGS, PARAMS, I, R):
+def compatibility(SETTINGS, PARAMS, I, R):
 
     antigens = PARAMS.major + PARAMS.minor
     C = np.zeros([len(I), len(R)])
 
-    if ("patroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
-
+    if ("patgroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
         for i in range(len(I)):
             for r in range(len(R)):
                 v_musts_ir = [(I[i].vector[k], R[r].vector[k]) for k in range(len(antigens)) if PARAMS.patgroup_weights.loc[R[r].patgroup,antigens[k]] == 10]
                 if all(vi <= vr for vi, vr in v_musts_ir):
                     C[i,r] = 1
 
-    # elif "relimm" in SETTINGS.strategy:
-
-    #     for i in range(len(I)):
-    #         for r in range(len(R)):
-    #             v_musts_ir = [(I[i].vector[k], R[r].vector[k]) for k in range(len(antigens)) if PARAMS.relimm_weights.loc[0,antigens[k]] == 10]
-    #             if all(vi <= vr for vi, vr in v_musts_ir):
-    #                 C[i,r] = 1
-        
-
     else:
-        
         num_major = len(PARAMS.major)
-
         for i in range(len(I)):
             for r in range(len(R)):
                 if all(vi <= vr for vi, vr in zip(I[i].vector[:num_major], R[r].vector[:num_major])):
                     C[i,r] = 1
 
-
     return C
 
+def timewise_possible(SETTINGS, PARAMS, I, R, day):
+    
+    T = np.zeros([len(I), len(R)])
+    for i in I.keys():
+        for r in R.keys():
+            T[i,r] = 1 if (PARAMS.max_age - 1 - I[i].age) >= (R[r].issuing_day - day) else 0
 
+    return T
 
 
 #         COMPATIBILITY_DONOR_PATIENT = [
