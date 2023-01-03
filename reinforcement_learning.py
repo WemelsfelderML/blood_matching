@@ -71,7 +71,7 @@ class Environment():
         self.state_size = (num_bloodgroups * PARAMS.max_age) + (num_bloodgroups * max_request_size)
 
         self.supply_scenario = pd.read_csv(SETTINGS.home_dir + f"supply/{SETTINGS.supply_size}/cau{round(SETTINGS.donor_eth_distr[0]*100)}_afr{round(SETTINGS.donor_eth_distr[1]*100)}_asi{round(SETTINGS.donor_eth_distr[2]*100)}_{e}.csv")
-        self.demand_scenario = pd.read_csv(SETTINGS.home_dir + f"demand/{SETTINGS.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{SETTINGS.demand_scenario}_{e}.csv")
+        self.htype = pd.read_csv(SETTINGS.home_dir + f"demand/{SETTINGS.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{SETTINGS.htype}_{e}.csv")
 
         self.supply_index = 0
 
@@ -164,7 +164,7 @@ class Environment():
 
         # Select the part of the demand scenario belonging to the given day.
         # TODO: all requests are currently sampled as becoming known on the day of issuing. Include "Day Available" column later when desired.
-        data = self.demand_scenario.loc[self.demand_scenario["Day Needed"] == day]
+        data = self.htype.loc[self.htype["Day Needed"] == day]
 
         demand_vector = []
 

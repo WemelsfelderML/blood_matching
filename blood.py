@@ -91,7 +91,7 @@ class Blood:
     def get_usability(self, PARAMS, hospitals, antigens = []):
 
         # IMPORTANT: this is now hardcoded for the case where SCD patients are Africans and all others are Caucasions.
-        avg_daily_demand_african = sum([PARAMS.patgroup_distr[hospital.demand_scenario]["SCD"] * hospital.avg_daily_demand for hospital in hospitals])
+        avg_daily_demand_african = sum([PARAMS.patgroup_distr[hospital.htype]["SCD"] * hospital.avg_daily_demand for hospital in hospitals])
         avg_daily_demand_total = sum([hospital.avg_daily_demand for hospital in hospitals])
         part_african = avg_daily_demand_african / avg_daily_demand_total
 
@@ -172,7 +172,16 @@ def vector_to_major(vector):
 
     return major
 
-def compatibility(SETTINGS, PARAMS, I, R):
+def timewise_possible(SETTINGS, PARAMS, I, R, day):
+    
+    T = np.zeros([len(I), len(R)])
+    for i in I.keys():
+        for r in R.keys():
+            T[i,r] = 1 if (PARAMS.max_age - 1 - I[i].age) >= (R[r].issuing_day - day) else 0
+
+    return T
+
+def precompute_compatibility(SETTINGS, PARAMS, I, R):
 
     antigens = PARAMS.major + PARAMS.minor
     C = np.zeros([len(I), len(R)])
@@ -193,14 +202,24 @@ def compatibility(SETTINGS, PARAMS, I, R):
 
     return C
 
-def timewise_possible(SETTINGS, PARAMS, I, R, day):
-    
-    T = np.zeros([len(I), len(R)])
-    for i in I.keys():
-        for r in R.keys():
-            T[i,r] = 1 if (PARAMS.max_age - 1 - I[i].age) >= (R[r].issuing_day - day) else 0
+def compatibility(SETTINGS, PARAMS, ip, rq):
 
-    return T
+    antigens = PARAMS.major + PARAMS.minor
+
+    if ("patgroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
+        v_musts_ir = [(ip.vector[k], rq.vector[k]) for k in range(len(antigens)) if PARAMS.patgroup_weights.loc[rq.patgroup,antigens[k]] == 10]
+        if all(vi <= vr for vi, vr in v_musts_ir):
+            return 1
+        else:
+            return 0
+
+    else:
+        num_major = len(PARAMS.major)
+        if all(vi <= vr for vi, vr in zip(ip.vector[:num_major], rq.vector[:num_major])):
+            return 1
+        else:
+            return 0
+
 
 
 #         COMPATIBILITY_DONOR_PATIENT = [

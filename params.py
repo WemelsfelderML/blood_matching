@@ -9,13 +9,12 @@ class Params():
         # BLOOD PARAMETERS #
         ####################
 
-        self.max_age = 3
+        self.max_age = 35
 
         self.ABOD = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
         self.major = ["A", "B", "D"]
         self.minor = ["C", "c", "E", "e", "K", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # "k", "M", "N"
     
-
         #######################
         # MISMATCHING WEIGHTS #
         #######################
@@ -37,7 +36,8 @@ class Params():
         self.patgroup_distr = {
             "Other" : {"Other":1, "Wu45":0, "MDS":0, "Thal":0, "AIHA":0, "ALA":0, "SCD":0},
             "regional" : {"Other":0.886867, "Wu45":0.049352, "MDS":0, "Thal":0.008607969, "AIHA":0.014933, "ALA":0.031632, "SCD":0.008607969},
-            "university" : {"Other":0.64605, "Wu45":0.10250, "MDS":0.04542, "Thal":0.05665, "AIHA":0.02731, "ALA":0.06543, "SCD":0.05665}
+            "university" : {"Other":0.64605, "Wu45":0.10250, "MDS":0.04542, "Thal":0.05665, "AIHA":0.02731, "ALA":0.06543, "SCD":0.05665},
+            "manual" : {"Other":0.886867, "Wu45":0.049352, "MDS":0, "Thal":0.008607969, "AIHA":0.014933, "ALA":0.031632, "SCD":0.008607969},
         }
 
         # Each column specifies the probability of a request becoming known 0, 1, 2, etc. days in advance w.r.t. its issuing date.

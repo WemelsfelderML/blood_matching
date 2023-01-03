@@ -4,15 +4,15 @@ from blood import *
 
 class Hospital():
     
-    def __init__(self, SETTINGS, PARAMS, demand_scenario, avg_daily_demand, e):
+    def __init__(self, SETTINGS, PARAMS, htype, e):
 
-        self.name = f"{demand_scenario[:3]}_{e}"
+        self.name = f"{htype[:3]}_{e}"
 
-        self.demand_scenario = demand_scenario
-        self.avg_daily_demand = avg_daily_demand
-        self.inventory_size = 3 * avg_daily_demand
+        self.htype = htype
+        self.avg_daily_demand = SETTINGS.avg_daily_demand[htype]
+        self.inventory_size = SETTINGS.inv_size_factor * self.avg_daily_demand
 
-        self.demand_data = pd.read_csv(SETTINGS.home_dir + f"demand/{avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{demand_scenario}_{e}.csv")
+        self.demand_data = pd.read_csv(SETTINGS.home_dir + f"demand/{self.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{htype}_{e}.csv")
 
         # Sample supply for each age upto maximum age.
         # TODO maybe have inventory and requests already be a index-product dictionary as used in MINRAR?

@@ -89,20 +89,20 @@ class Demand():
             return num_units_demanded
 
     # Generate a list of random requests according to the distribution which was calculated in the constructor of this instance
-    def sample_request_for_day(self, SETTINGS, PARAMS, day_index, df, demand_scenario):
+    def sample_request_for_day(self, SETTINGS, PARAMS, day_index, df, htype):
         num_units_demanded = self.sample_number_of_units()
 
         num_units = 0
         while num_units < num_units_demanded:
-            r = self.get_random_request(SETTINGS, PARAMS, day_index, demand_scenario)
+            r = self.get_random_request(SETTINGS, PARAMS, day_index, htype)
             df.loc[len(df)] = [r.day_needed, r.day_available, r.num_units, r.patgroup, r.blood.ethnicity] + r.blood.vector
             num_units += r.num_units
 
         return df
 
-    def get_random_request(self, SETTINGS, PARAMS, day_needed, demand_scenario):
+    def get_random_request(self, SETTINGS, PARAMS, day_needed, htype):
 
-        patgroup = random.choices(PARAMS.patgroups, weights = [PARAMS.patgroup_distr[demand_scenario][pg] for pg in PARAMS.patgroups], k=1)[0]
+        patgroup = random.choices(PARAMS.patgroups, weights = [PARAMS.patgroup_distr[htype][pg] for pg in PARAMS.patgroups], k=1)[0]
         lead_time = random.choices(range(14), weights = PARAMS.request_lead_time_probabilities[patgroup], k=1)[0]
         num_units = random.choices(range(1,5), weights = PARAMS.request_num_units_probabilities[patgroup], k=1)[0]
 
@@ -121,7 +121,7 @@ class Demand():
 
 
 # Generate multiple demand scenarios with the same parameters.
-def generate_demand(SETTINGS, PARAMS, demand_scenario, avg_daily_demand):
+def generate_demand(SETTINGS, PARAMS, htype, avg_daily_demand):
 
     duration = SETTINGS.test_days + SETTINGS.init_days
 
@@ -138,12 +138,12 @@ def generate_demand(SETTINGS, PARAMS, demand_scenario, avg_daily_demand):
         os.mkdir(path)
 
     i = 0
-    while os.path.exists(SETTINGS.home_dir + f"demand/{avg_daily_demand}/{duration}/{demand_scenario}_{i}.csv"):
+    while os.path.exists(SETTINGS.home_dir + f"demand/{avg_daily_demand}/{duration}/{htype}_{i}.csv"):
         i += 1
 
     for _ in range(SETTINGS.episodes[0],SETTINGS.episodes[1]):
 
-        print(f"Generating demand '{demand_scenario}_{i}'.")
+        print(f"Generating demand '{htype}_{i}'.")
 
         # initialize distributions for each day of the week
         daily_distributions = []
@@ -153,9 +153,9 @@ def generate_demand(SETTINGS, PARAMS, demand_scenario, avg_daily_demand):
         df = pd.DataFrame(columns = ["Day Needed", "Day Available", "Num Units", "Patient Type", "Ethnicity"] + PARAMS.major + PARAMS.minor)
 
         for day_index in range(duration):
-            df = daily_distributions[day_index%7].sample_request_for_day(SETTINGS, PARAMS, day_index, df, demand_scenario)
+            df = daily_distributions[day_index%7].sample_request_for_day(SETTINGS, PARAMS, day_index, df, htype)
 
-        df.to_csv(SETTINGS.home_dir + f"demand/{avg_daily_demand}/{duration}/{demand_scenario}_{i}.csv", index=False)
+        df.to_csv(SETTINGS.home_dir + f"demand/{avg_daily_demand}/{duration}/{htype}_{i}.csv", index=False)
 
         i += 1
 

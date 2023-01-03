@@ -15,10 +15,9 @@ def main():
         check_dir_existence(path)
 
     if SETTINGS.mode == "demand":
-        for _ in range(SETTINGS.n_hospitals["regional"]):
-            generate_demand(SETTINGS, PARAMS, "regional", 50)
-        for _ in range(SETTINGS.n_hospitals["university"]):
-            generate_demand(SETTINGS, PARAMS, "university", 100)
+        for htype in SETTINGS.n_hospitals.keys():
+            for _ in range(SETTINGS.n_hospitals[htype]):
+                generate_demand(SETTINGS, PARAMS, htype, SETTINGS.avg_daily_demand[htype])
 
     elif SETTINGS.mode == "supply":
         generate_supply(SETTINGS, PARAMS)

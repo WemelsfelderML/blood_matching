@@ -10,6 +10,7 @@ class Settings():
         # "supply": generate supply data
         # "optimize": run simulations and optimize matching
         self.mode = "optimize"
+        # TODO: automatically create data before optimizing if not yet available in folders
 
         #########################
         # OPTIMIZATION SETTINGS #
@@ -21,52 +22,73 @@ class Settings():
 
         # "on": online optimization.
         # "off": offline optimization.
-        self.line = "off"
-
-         # "train" for training the RL model
-        # "test" for running simulations with saved model
-        self.RL_mode = "train"
-
-        # Name of the model to be used for saving files.
-        self.model_name = "small test 10 days"
-
+        self.line = "on"
 
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
-        self.test_days = 10
+        # self.test_days = 5 * 35
+        self.test_days = 365
         self.init_days = 0
 
-        # self.episodes = 1500
         self.episodes = (0,5)
+        # (0,5): O-
+        # (5,10): O+
+        # (10,15): A-
+        # (15,20): A+
+        # (20,25): B-
+        # (25,30): B+
+        # (30,35): AB-
+        # (35,40): AB+
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
         # "university": Use the patient group distribution of the AMC, a university hospital, with average daily demand of 100 products.
         self.n_hospitals = {
             "regional" : 1,
-            "university" : 0
+            "university" : 0,
+            "manual" : 0
         }
+
+        self.avg_daily_demand = {
+            "regional" : 50,
+            "university" : 100,
+            "manual" : 10
+        }
+
+        if sum(self.n_hospitals.values()) > 1:
+            self.inv_size_factor = 5
+        else:
+            self.inv_size_factor = 3
+
+
+        # Name of the model to be used for saving files.
+        # self.model_name = f"I-R verhouding {self.inv_size_factor}x"
+        self.model_name = "changing initial inventories"
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
-        self.strategy = "relimm"
-        self.patgroup_musts = False
-
+        self.strategy = "patgroups"
+        self.patgroup_musts = True
+ 
 
         ##############################
         # GENERATING DEMAND / SUPPLY #
         ##############################
 
         self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
-        self.supply_size = (self.init_days + self.test_days + 10) * ((self.n_hospitals["regional"] * 50) + (self.n_hospitals["university"] * 100))
+        self.supply_size = (self.init_days + self.test_days + (self.inv_size_factor * 2)) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] for htype in self.n_hospitals.keys()])
 
 
         ##########################
         # REINFORCEMENT LEARNING #
         ##########################
+
+        # "train" for training the RL model
+        # "test" for running simulations with saved model
+        self.RL_mode = "train"
 
         self.nn_update_iter = 5
         self.max_memory_size = 1000
@@ -84,9 +106,9 @@ class Settings():
         # GUROBI OPTIMIZER #
         ####################
 
-        self.show_gurobi_output = True
+        self.show_gurobi_output = False
         self.gurobi_threads = 12
-        self.gurobi_timeout = 60 * 60
+        self.gurobi_timeout = 12 * 60 * 60
 
 
     # Generate a file name for exporting log or result files.
@@ -125,6 +147,9 @@ class Settings():
         header += [f"num requests {i+1} units" for i in range(4)]
         header += ["num supplied products"] + [f"num supplied {i}" for i in ABOD_names] + [f"num requests {i}" for i in ABOD_names]
         header += [f"num {i} in inventory" for i in ABOD_names]
+
+        if self.line == "off":
+            header += ["products available today", "products in inventory today"]
 
         # Which products were issued to which patiens.
         header += ["avg issuing age"]
@@ -167,7 +192,7 @@ class Settings():
         
         for hospital in hospitals:
             indices = [(day,hospital.name) for day in days]
-            df.loc[indices,"demand scenario"] = f"{hospital.demand_scenario}_{episode}"
+            df.loc[indices,"demand scenario"] = f"{hospital.htype}_{episode}"
             df.loc[indices,"avg daily demand"] = hospital.avg_daily_demand
             df.loc[indices,"inventory size"] = hospital.inventory_size
         

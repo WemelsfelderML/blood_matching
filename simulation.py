@@ -18,7 +18,9 @@ def simulation(SETTINGS, PARAMS):
         for e in range(SETTINGS.episodes[0], SETTINGS.episodes[1]):
             print(f"\nEpisode: {e}")
 
-            hospitals = ([Hospital(SETTINGS, PARAMS, "regional", 50, (e*SETTINGS.n_hospitals["regional"])+i) for i in range(SETTINGS.n_hospitals["regional"])]) + ([Hospital(SETTINGS, PARAMS, "university", 100, (e*SETTINGS.n_hospitals["university"])+i) for i in range(SETTINGS.n_hospitals["university"])])
+            hospitals = []
+            for htype in SETTINGS.n_hospitals.keys():
+                hospitals += [Hospital(SETTINGS, PARAMS, htype, (e*SETTINGS.n_hospitals[htype])+i) for i in range(SETTINGS.n_hospitals[htype])]
             dc = Distribution_center(SETTINGS, PARAMS, hospitals, e)
 
             # Initialize hospital inventories
@@ -38,13 +40,12 @@ def simulation(SETTINGS, PARAMS):
             
     else:
 
-        demand_scenario = max(SETTINGS.n_hospitals, key = lambda i: SETTINGS.n_hospitals[i])
-        avg_daily_demand = 50 if demand_scenario == "regional" else 100
+        htype = max(SETTINGS.n_hospitals, key = lambda i: SETTINGS.n_hospitals[i])
 
         for e in range(SETTINGS.episodes[0], SETTINGS.episodes[1]):
             print(f"\nEpisode: {e}")
 
-            hospital = Hospital(SETTINGS, PARAMS, demand_scenario, avg_daily_demand, e)
+            hospital = Hospital(SETTINGS, PARAMS, htype, e)
             dc = Distribution_center(SETTINGS, PARAMS, [hospital], e)
 
             if SETTINGS.line == "on":
@@ -60,7 +61,7 @@ def simulation(SETTINGS, PARAMS):
 
                     df = simulate_single_hospital(SETTINGS, PARAMS, optimizer, df, dc, hospital, e, day)
 
-                df.to_csv(SETTINGS.generate_filename("results") + f"{SETTINGS.strategy}_{demand_scenario[:3]}_{e}.csv", sep=',', index=True)
+                df.to_csv(SETTINGS.generate_filename("results") + f"{SETTINGS.strategy}_{htype[:3]}_{e}.csv", sep=',', index=True)
 
             elif SETTINGS.line == "off":
 
@@ -74,11 +75,11 @@ def simulation(SETTINGS, PARAMS):
                 
                 model = optimizer.minrar_offline(SETTINGS, PARAMS, hospital, days)
                 
-                df, x, y, z, o, a, p = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e)
+                df, x, y, z, a, b = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e)
                 for day in days:
-                    df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z)
+                    df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z, a=a, b=b)
 
-                df.to_csv(SETTINGS.generate_filename("results") + f"offline_{SETTINGS.strategy}_{demand_scenario[:3]}_{e}.csv", sep=',', index=True)
+                df.to_csv(SETTINGS.generate_filename("results") + f"offline_{SETTINGS.strategy}_{htype[:3]}_{e}.csv", sep=',', index=True)
 
             else:
                 print("Please set the 'line' variable in settings.py to a valid value (either 'off' or 'on').")
@@ -152,15 +153,19 @@ def simulate_multiple_hospitals(SETTINGS, PARAMS, optimizer, df, dc, hospitals, 
         if day >= SETTINGS.init_days:
             df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z)
         supply_sizes.append(hospital.update_inventory(SETTINGS, PARAMS, x, day))
+
     
     # given supply_sizes, allocate products to each of the hospitals to restock them upto their maximum capacity
     model = optimizer.allocate_remaining_supply_from_dc(SETTINGS, PARAMS, day, dc.inventory, hospitals, supply_sizes, allocations_from_dc)
 
     x = model_output_to_transports(model, len(dc.inventory), len(hospitals))
 
-    I = {i : dc.inventory[i] for i in range(len(dc.inventory))}               # Set of all inventory products.
-    H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
-    bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
+    for h in range(len(hospitals)):
+        print(supply_sizes[h], x.sum(axis=0)[h], allocations_from_dc.sum(axis=0)[h])
+
+    # I = {i : dc.inventory[i] for i in range(len(dc.inventory))}               # Set of all inventory products.
+    # H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
+    # bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
     
     for h in range(len(hospitals)):
         hospitals[h].inventory += [dc.inventory[i] for i in range(len(dc.inventory)) if x[i,h] >= 1]
@@ -195,25 +200,26 @@ def model_output_to_matches(SETTINGS, PARAMS, df, model, inventory, requests, na
             z[index0, index1] = var.X
 
     if SETTINGS.line == "off":
-        o = np.zeros([len(inventory)])
-        a = np.zeros([len(inventory)])
-        p = np.zeros([len(inventory), SETTINGS.init_days + SETTINGS.test_days])
+        # o = np.zeros([len(inventory)])
+        a = np.zeros([len(inventory), SETTINGS.init_days + SETTINGS.test_days])
+        b = np.zeros([len(inventory), SETTINGS.init_days + SETTINGS.test_days])
         for var in model.getVars():
             var_name = re.split(r'\W+', var.varName)[0]
-            if var_name == "o":
-                index0 = int(re.split(r'\W+', var.varName)[1])
-                o[index0] = var.X
+            # if var_name == "o":
+            #     index0 = int(re.split(r'\W+', var.varName)[1])
+            #     o[index0] = var.X
             if var_name == "a":
                 index0 = int(re.split(r'\W+', var.varName)[1])
-                a[index0] = var.X
-            if var_name == "p":
+                index1 = int(re.split(r'\W+', var.varName)[2])
+                a[index0, index1] = var.X
+            if var_name == "b":
                 index0 = int(re.split(r'\W+', var.varName)[1])
                 index1 = int(re.split(r'\W+', var.varName)[2])
-                p[index0, index1] = var.X
+                b[index0, index1] = var.X
 
-        df.loc[:,"nvars"] = sum([np.product(var.shape) for var in [x, y, z, o, a, p]])
+        df["nvars"] = sum([np.product(var.shape) for var in [x, y, z, a, b]])
 
-        return df, x, y, z, o, a, p
+        return df, x, y, z, a, b
 
     else:
         df.loc[(day,name),"nvars"] = max(df.loc[(day,name),"nvars"], sum([np.product(var.shape) for var in [x, y, z]]))
@@ -221,17 +227,15 @@ def model_output_to_matches(SETTINGS, PARAMS, df, model, inventory, requests, na
         return df, x, y, z
 
     # Write the values found to local files.
-    # with open(SETTINGS.generate_filename("results") + f"x_{SETTINGS.strategy}_{hospital.demand_scenario[:3]}_{episode}-{day}.pickle", "wb") as f:
+    # with open(SETTINGS.generate_filename("results") + f"x_{SETTINGS.strategy}_{hospital.htype[:3]}_{episode}-{day}.pickle", "wb") as f:
     #     pickle.dump(x, f)
-    # with open(SETTINGS.generate_filename("results") + f"y_{SETTINGS.strategy}_{hospital.demand_scenario[:3]}_{e}.pickle", "wb") as f:
+    # with open(SETTINGS.generate_filename("results") + f"y_{SETTINGS.strategy}_{hospital.htype[:3]}_{e}.pickle", "wb") as f:
     #     pickle.dump(y, f)
-    # with open(SETTINGS.generate_filename("results") + f"z_{SETTINGS.strategy}_{hospital.demand_scenario[:3]}_{e}.pickle", "wb") as f:
+    # with open(SETTINGS.generate_filename("results") + f"z_{SETTINGS.strategy}_{hospital.htype[:3]}_{e}.pickle", "wb") as f:
     #     pickle.dump(z, f)
 
     # stop = time.perf_counter()
     # print(f"loading model results: {(stop - start):0.4f} seconds")
-
-    
 
 
 def model_output_to_transports(model, size_I, size_H):
