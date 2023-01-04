@@ -141,8 +141,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
         R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
@@ -252,8 +254,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
         R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
@@ -355,8 +359,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
         R = {r : requests[r][0] for r in range(len(requests))}              # Set of all requests.
@@ -463,8 +469,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
         R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.
@@ -585,8 +593,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
         H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
@@ -658,8 +668,10 @@ class MINRAR():
         model = Model(name="model")
         if SETTINGS.show_gurobi_output == False:
             model.Params.LogToConsole = 0
-        model.setParam('Threads', SETTINGS.gurobi_threads)
-        model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
+        if SETTINGS.gurobi_threads != None:
+            model.setParam('Threads', SETTINGS.gurobi_threads)
+        if SETTINGS.gurobi_timeout != None:
+            model.setParam('TimeLimit', SETTINGS.gurobi_timeout)
 
         I = {i : hospital.inventory[i] for i in range(len(hospital.inventory))}               # Set of all inventory products.
         R = {r : hospital.requests[r] for r in range(len(hospital.requests))}                 # Set of all requests.

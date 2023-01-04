@@ -24,23 +24,18 @@ class Settings():
         # "off": offline optimization.
         self.line = "on"
 
+        # Name of the model to be used for saving files.
+        self.model_name = "daily 2 years"
+
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
-        # self.test_days = 5 * 35
-        self.test_days = 365
-        self.init_days = 0
+        # Only the results of test days will be logged.
+        self.test_days = 2 * 365
+        self.init_days = 2 * 35
 
-        self.episodes = (0,5)
-        # (0,5): O-
-        # (5,10): O+
-        # (10,15): A-
-        # (15,20): A+
-        # (20,25): B-
-        # (25,30): B+
-        # (30,35): AB-
-        # (35,40): AB+
+        self.episodes = (0,25)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
@@ -48,24 +43,19 @@ class Settings():
         self.n_hospitals = {
             "regional" : 1,
             "university" : 0,
-            "manual" : 0
+            "manual" : 0,
         }
 
         self.avg_daily_demand = {
             "regional" : 50,
             "university" : 100,
-            "manual" : 10
+            "manual" : 10,
         }
 
         if sum(self.n_hospitals.values()) > 1:
             self.inv_size_factor = 5
         else:
             self.inv_size_factor = 3
-
-
-        # Name of the model to be used for saving files.
-        # self.model_name = f"I-R verhouding {self.inv_size_factor}x"
-        self.model_name = "changing initial inventories"
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
@@ -86,29 +76,29 @@ class Settings():
         # REINFORCEMENT LEARNING #
         ##########################
 
-        # "train" for training the RL model
-        # "test" for running simulations with saved model
-        self.RL_mode = "train"
+        # # "train" for training the RL model
+        # # "test" for running simulations with saved model
+        # self.RL_mode = "train"
 
-        self.nn_update_iter = 5
-        self.max_memory_size = 1000
-        self.train_iters = 10
-        self.batch_size = 20
-        self.gamma = 0.99
-        self.alpha = 0.01
-        self.dropout = 0.2
-        self.exploration_max = 1.0
-        self.exploration_min = 0.01
-        self.exploration_decay = 0.1
+        # self.nn_update_iter = 5
+        # self.max_memory_size = 1000
+        # self.train_iters = 10
+        # self.batch_size = 20
+        # self.gamma = 0.99
+        # self.alpha = 0.01
+        # self.dropout = 0.2
+        # self.exploration_max = 1.0
+        # self.exploration_min = 0.01
+        # self.exploration_decay = 0.1
 
 
         ####################
         # GUROBI OPTIMIZER #
         ####################
 
-        self.show_gurobi_output = False
-        self.gurobi_threads = 12
-        self.gurobi_timeout = 12 * 60 * 60
+        self.show_gurobi_output = False     # True or False
+        self.gurobi_threads = None          # Number of threads available, or None in case of no limit
+        self.gurobi_timeout = None          # Number of minutes allowed for optimization, None in case of no limit
 
 
     # Generate a file name for exporting log or result files.
@@ -197,16 +187,3 @@ class Settings():
             df.loc[indices,"inventory size"] = hospital.inventory_size
         
         return df
-
-
-        # i = 0
-        # file = f"{generate_filename("results")}_{i}.csv"
-        # while os.path.exists(file):
-        #     i += 1
-        #     file = f"{file[:-4]}_{i}.csv"
-            
-        # df.to_csv(file, sep=',', index=False)
-
-        # self.output_index = i
-
-
