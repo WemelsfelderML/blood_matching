@@ -4,7 +4,7 @@ class Settings():
 
     def __init__(self):
 
-        self.home_dir = "C:/Users/Merel/Documents/Sanquin/Projects/RBC matching/Reinforcement Learning/blood_matching_RL/"
+        self.home_dir = "C:/Users/Merel/Documents/Sanquin/Projects/RBC matching/Paper patient groups/blood_matching/"
 
         # "demand": generate demand data
         # "supply": generate supply data
@@ -24,18 +24,20 @@ class Settings():
         # "off": offline optimization.
         self.line = "on"
 
-        # Name of the model to be used for saving files.
-        self.model_name = "daily 2 years"
+        # Output files will be stored in directory results/[this name].
+        self.model_name = "test mismatches Ronald"
 
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
         # Only the results of test days will be logged.
-        self.test_days = 2 * 365
-        self.init_days = 2 * 35
+        self.test_days = 365
+        self.init_days = 31
 
-        self.episodes = (0,25)
+        # (x,y): Episode numbers range(x,y) will be optimized.
+        # The total number of simulations executed will thus be y - x.
+        self.episodes = (0,5)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
@@ -52,15 +54,15 @@ class Settings():
             "manual" : 10,
         }
 
-        if sum(self.n_hospitals.values()) > 1:
-            self.inv_size_factor = 5
-        else:
-            self.inv_size_factor = 3
+        # Size factor for distribution center and hospitals.
+        # Average daily demand × size factor = inventory size.
+        self.inv_size_factor_dc = 5
+        self.inv_size_factor_hosp = 3
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
-        self.strategy = "patgroups"
+        self.strategy = "relimm_patweights"
         self.patgroup_musts = True
  
 
@@ -69,7 +71,11 @@ class Settings():
         ##############################
 
         self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
-        self.supply_size = (self.init_days + self.test_days + (self.inv_size_factor * 2)) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] for htype in self.n_hospitals.keys()])
+        
+        if sum(self.n_hospitals.values()) > 1:
+            self.supply_size = (self.init_days + self.test_days) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] * self.inv_size_factor_hosp for htype in self.n_hospitals.keys()])
+        else:
+            self.supply_size = (self.init_days + self.test_days) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] * self.inv_size_factor_hosp for htype in self.n_hospitals.keys()])
 
 
         ##########################
@@ -107,6 +113,7 @@ class Settings():
         return self.home_dir + f"{output_type}/{self.model_name}/{self.method.lower()}_"
 
 
+    # Create the dataframe with all required columns, to store outputs during the simulations.
     def initialize_output_dataframe(self, PARAMS, hospitals, episode):
 
         ##########
@@ -138,6 +145,7 @@ class Settings():
         header += ["num supplied products"] + [f"num supplied {i}" for i in ABOD_names] + [f"num requests {i}" for i in ABOD_names]
         header += [f"num {i} in inventory" for i in ABOD_names]
 
+        # Only if the offline model is used.
         if self.line == "off":
             header += ["products available today", "products in inventory today"]
 
@@ -156,6 +164,7 @@ class Settings():
 
         df = pd.DataFrame(columns = header)
 
+        # Set the dataframe's index to each combination of day and location name.
         locations = []
         for hospital in hospitals:
             locations += [hospital.name] * len(days)

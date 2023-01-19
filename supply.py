@@ -42,7 +42,7 @@ def generate_supply(SETTINGS, PARAMS):
         random.shuffle(index)
         df = df.loc[index]
 
-        # inventory_size = SETTINGS.inv_size_factor * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
+        # inventory_size = SETTINGS.inv_size_factor_hosp * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
         # units = []
         # for _ in range(inventory_size):
         #     unit = Unit(Blood(PARAMS, "Caucasian", major="AB+"))

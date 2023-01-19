@@ -10,7 +10,7 @@ class Hospital():
 
         self.htype = htype
         self.avg_daily_demand = SETTINGS.avg_daily_demand[htype]
-        self.inventory_size = SETTINGS.inv_size_factor * self.avg_daily_demand
+        self.inventory_size = SETTINGS.inv_size_factor_hosp * self.avg_daily_demand
 
         self.demand_data = pd.read_csv(SETTINGS.home_dir + f"demand/{self.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{htype}_{e}.csv")
 

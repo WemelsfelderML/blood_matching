@@ -13,7 +13,7 @@ class Distribution_center():
 
         if len(hospitals) > 1:
 
-            self.inventory_size = SETTINGS.inv_size_factor * sum([hospital.avg_daily_demand for hospital in hospitals])
+            self.inventory_size = SETTINGS.inv_size_factor_dc * sum([hospital.avg_daily_demand for hospital in hospitals])
 
             # Sample supply for each age upto maximum age.
             inventory = []

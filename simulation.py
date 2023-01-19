@@ -75,7 +75,7 @@ def simulation(SETTINGS, PARAMS):
                 
                 model = optimizer.minrar_offline(SETTINGS, PARAMS, hospital, days)
                 
-                df, x, y, z, a, b = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e)
+                df, x, y, z, a, b = model_output_to_matches(SETTINGS, PARAMS, df, model, [hospital], e)
                 for day in days:
                     df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z, a=a, b=b)
 
@@ -95,7 +95,7 @@ def simulate_single_hospital(SETTINGS, PARAMS, optimizer, df, dc, hospital, e, d
     df.loc[(day, hospital.name),"gurobi status"] = model.status
     # df.loc[(day, hospital.name),"calc time"] = calc_time
 
-    df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e, day)
+    df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, dc, [hospital], e, day)
     if day >= SETTINGS.init_days:
         df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z)
     supply_size = hospital.update_inventory(SETTINGS, PARAMS, x, day)
@@ -105,126 +105,204 @@ def simulate_single_hospital(SETTINGS, PARAMS, optimizer, df, dc, hospital, e, d
 
 
 def simulate_multiple_hospitals(SETTINGS, PARAMS, optimizer, df, dc, hospitals, e, day):
- 
-    propagated_requests = []
 
-    for h in range(len(hospitals)):
-        hospital = hospitals[h]
+    for hospital in hospitals:
         hospital.requests = [r for r in hospital.requests if r.issuing_day >= day]
-        for rq in hospital.requests:
-            rq.allocated_from_dc = 0
         hospital.sample_requests_single_day(PARAMS, day=day)
 
-        model = optimizer.minrar_hospital_before_dc_allocation(SETTINGS, PARAMS, day, hospital)
-        df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e, day)
+        for rq in hospital.requests:
+            rq.allocated_from_dc = 0
 
-        for r in range(len(hospital.requests)):
-            if y[r] == 0:
-                hospital.requests[r].best_mismatch_penalty = optimizer.get_mismatch_penalty(SETTINGS, hospital, r, z)
-            rq = hospital.requests[r]
-            if (rq.issuing_day > day) and (rq.best_mismatch_penalty > 0):
-                if rq.patgroup in ["MDS", "Thal", "AIHA", "ALA", "SCD"]:
-                    propagated_requests.append([rq, h, r])
-                elif (rq.patgroup == "Wu45") and (y[r] == 1):
-                    propagated_requests.append([rq, h, r])
-
-    # calculate product allocations from DC and return a list of length 7 (each day of the coming week),
-    # with for each day a set of (hospital, product) pairs to be shipped
-    model = optimizer.allocate_propagated_requests_from_dc(SETTINGS, PARAMS, day, dc.inventory, propagated_requests)
-    df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, dc.inventory, [pr[0] for pr in propagated_requests], dc.name, e, day)
-
+    model = optimizer.minrar_multiple_hospitals(SETTINGS, PARAMS, dc, hospitals, day)
+    df, xh, xdc, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, dc, hospitals, e, day)
+ 
     allocations_from_dc = np.zeros([len(dc.inventory),len(hospitals)])
-    for r in range(len(propagated_requests)):
-        if propagated_requests[r][0].issuing_day == (day + 1):
+    for h in range(len(hospitals)):
+        for r in range(len(hospitals[h].requests)):
+            if hospitals[h].requests[r].issuing_day == (day + 1):
 
-            issued = np.where(x[:,r]==1)[0]
-            for i in issued:
-                allocations_from_dc[i,propagated_requests[r][1]] = 1
-
-        if y[r] == 0:
-            hospitals[propagated_requests[r][1]].requests[propagated_requests[r][2]].allocated_from_dc = 1
-
-    supply_sizes = []
-    for hospital in hospitals:
-        # calculate assignment within hospitals knowing allocations from DC
-        model = optimizer.mirar_hospital_after_dc_allocation(SETTINGS, PARAMS, day, hospital)
-        df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e, day)
+                issued = np.where(xdc[h][:,r]==1)[0]
+                for i in issued:
+                    allocations_from_dc[i,h] = 1
+                    hospitals[h].requests[r].allocated_from_dc += 1     # total number of products allocated to this request from DC
 
         if day >= SETTINGS.init_days:
-            df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z)
-        supply_sizes.append(hospital.update_inventory(SETTINGS, PARAMS, x, day))
+            df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospitals[h], day, x=xh[h], y=y[h], z=z[h])
 
+    # calculate assignment within hospitals knowing allocations from DC
+    supply_sizes = [hospitals[h].update_inventory(SETTINGS, PARAMS, xh[h], day) for h in range(len(hospitals))]
+
+    # print("supply sizes", supply_sizes)
+    # print("allocations from dc", allocations_from_dc)
+    # print(len(dc.inventory))
+    # print([len(hospital.inventory) for hospital in hospitals])
     
     # given supply_sizes, allocate products to each of the hospitals to restock them upto their maximum capacity
     model = optimizer.allocate_remaining_supply_from_dc(SETTINGS, PARAMS, day, dc.inventory, hospitals, supply_sizes, allocations_from_dc)
-
     x = model_output_to_transports(model, len(dc.inventory), len(hospitals))
 
-    for h in range(len(hospitals)):
-        print(supply_sizes[h], x.sum(axis=0)[h], allocations_from_dc.sum(axis=0)[h])
-
-    # I = {i : dc.inventory[i] for i in range(len(dc.inventory))}               # Set of all inventory products.
-    # H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
-    # bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
-    
     for h in range(len(hospitals)):
         hospitals[h].inventory += [dc.inventory[i] for i in range(len(dc.inventory)) if x[i,h] >= 1]
 
     # Remove all shipped and outdated units from DC inventory, and increase the age of all remaining products.
     dc.update_inventory(SETTINGS, PARAMS, x, day)
-    # TODO: log outdates in dc
 
     return df
 
 
-def model_output_to_matches(SETTINGS, PARAMS, df, model, inventory, requests, name, episode, day=0):
+# def simulate_multiple_hospitals(SETTINGS, PARAMS, optimizer, df, dc, hospitals, e, day):
+ 
+#     propagated_requests = []
+
+#     for h in range(len(hospitals)):
+#         hospital = hospitals[h]
+#         hospital.requests = [r for r in hospital.requests if r.issuing_day >= day]
+#         for rq in hospital.requests:
+#             rq.allocated_from_dc = 0
+#         hospital.sample_requests_single_day(PARAMS, day=day)
+
+#         model = optimizer.minrar_hospital_before_dc_allocation(SETTINGS, PARAMS, day, hospital)
+#         df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e, day)
+
+#         for r in range(len(hospital.requests)):
+#             if y[r] == 0:
+#                 hospital.requests[r].best_mismatch_penalty = optimizer.get_mismatch_penalty(SETTINGS, hospital, r, z)
+#             rq = hospital.requests[r]
+#             if (rq.issuing_day > day) and (rq.best_mismatch_penalty > 0):
+#                 if rq.patgroup in ["MDS", "Thal", "AIHA", "ALA", "SCD"]:
+#                     propagated_requests.append([rq, h, r])
+#                 elif (rq.patgroup == "Wu45") and (y[r] == 1):
+#                     propagated_requests.append([rq, h, r])
+
+#     # calculate product allocations from DC and return a list of length 7 (each day of the coming week),
+#     # with for each day a set of (hospital, product) pairs to be shipped
+#     model = optimizer.allocate_propagated_requests_from_dc(SETTINGS, PARAMS, day, dc.inventory, propagated_requests)
+#     df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, dc.inventory, [pr[0] for pr in propagated_requests], dc.name, e, day)
+
+#     allocations_from_dc = np.zeros([len(dc.inventory),len(hospitals)])
+#     for r in range(len(propagated_requests)):
+#         if propagated_requests[r][0].issuing_day == (day + 1):
+
+#             issued = np.where(x[:,r]==1)[0]
+#             for i in issued:
+#                 allocations_from_dc[i,propagated_requests[r][1]] = 1
+
+#         if y[r] == 0:
+#             hospitals[propagated_requests[r][1]].requests[propagated_requests[r][2]].allocated_from_dc = 1
+
+#     supply_sizes = []
+#     for hospital in hospitals:
+#         # calculate assignment within hospitals knowing allocations from DC
+#         model = optimizer.mirar_hospital_after_dc_allocation(SETTINGS, PARAMS, day, hospital)
+#         df, x, y, z = model_output_to_matches(SETTINGS, PARAMS, df, model, hospital.inventory, hospital.requests, hospital.name, e, day)
+
+#         if day >= SETTINGS.init_days:
+#             df = optimizer.log_results(SETTINGS, PARAMS, df, model, hospital, day, x=x, y=y, z=z)
+#         supply_sizes.append(hospital.update_inventory(SETTINGS, PARAMS, x, day))
+
+    
+#     # given supply_sizes, allocate products to each of the hospitals to restock them upto their maximum capacity
+#     model = optimizer.allocate_remaining_supply_from_dc(SETTINGS, PARAMS, day, dc.inventory, hospitals, supply_sizes, allocations_from_dc)
+
+#     x = model_output_to_transports(model, len(dc.inventory), len(hospitals))
+
+#     # I = {i : dc.inventory[i] for i in range(len(dc.inventory))}               # Set of all inventory products.
+#     # H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
+#     # bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
+    
+#     for h in range(len(hospitals)):
+#         hospitals[h].inventory += [dc.inventory[i] for i in range(len(dc.inventory)) if x[i,h] >= 1]
+
+#     # Remove all shipped and outdated units from DC inventory, and increase the age of all remaining products.
+#     dc.update_inventory(SETTINGS, PARAMS, x, day)
+#     # TODO: log outdates in dc
+
+#     return df
+
+
+def model_output_to_matches(SETTINGS, PARAMS, df, model, dc, hospitals, episode, day=0):
 
     # start = time.perf_counter()
 
-    # Get the values of the model variable as found for the optimal solution.
-    x = np.zeros([len(inventory), len(requests)])
-    y = np.zeros([len(requests)])
-    z = np.zeros([len(requests), len(PARAMS.major + PARAMS.minor)])
-    for var in model.getVars():
-        var_name = re.split(r'\W+', var.varName)[0]
-        if var_name == "x":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            index1 = int(re.split(r'\W+', var.varName)[2])
-            x[index0, index1] = var.X
-        if var_name == "y":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            y[index0] = var.X
-        if var_name == "z":
-            index0 = int(re.split(r'\W+', var.varName)[1])
-            index1 = int(re.split(r'\W+', var.varName)[2])
-            z[index0, index1] = var.X
+    if sum(SETTINGS.n_hospitals.values()) > 1:
 
-    if SETTINGS.line == "off":
-        # o = np.zeros([len(inventory)])
-        a = np.zeros([len(inventory), SETTINGS.init_days + SETTINGS.test_days])
-        b = np.zeros([len(inventory), SETTINGS.init_days + SETTINGS.test_days])
-        for var in model.getVars():
-            var_name = re.split(r'\W+', var.varName)[0]
-            # if var_name == "o":
-            #     index0 = int(re.split(r'\W+', var.varName)[1])
-            #     o[index0] = var.X
-            if var_name == "a":
-                index0 = int(re.split(r'\W+', var.varName)[1])
-                index1 = int(re.split(r'\W+', var.varName)[2])
-                a[index0, index1] = var.X
-            if var_name == "b":
-                index0 = int(re.split(r'\W+', var.varName)[1])
-                index1 = int(re.split(r'\W+', var.varName)[2])
-                b[index0, index1] = var.X
+        xh = [np.zeros([len(hospital.inventory), len(hospital.requests)]) for hospital in hospitals]
+        xdc = [np.zeros([len(dc.inventory), len(hospital.requests)]) for hospital in hospitals]
+        y = [np.zeros([len(hospital.requests)]) for hospital in hospitals]
+        z = [np.zeros([len(hospital.requests), len(PARAMS.major + PARAMS.minor)]) for hospital in hospitals]
 
-        df["nvars"] = sum([np.product(var.shape) for var in [x, y, z, a, b]])
+        for h in range(len(hospitals)):
+            for var in model.getVars():
+                var_name = re.split(r'\W+', var.varName)[0]
+                if var_name == f"xh{h}":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    index1 = int(re.split(r'\W+', var.varName)[2])
+                    xh[h][index0, index1] = var.X
+                if var_name == f"xdc{h}":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    index1 = int(re.split(r'\W+', var.varName)[2])
+                    xdc[h][index0, index1] = var.X
+                if var_name == f"y{h}":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    y[h][index0] = var.X
+                if var_name == f"z{h}":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    index1 = int(re.split(r'\W+', var.varName)[2])
+                    z[h][index0, index1] = var.X
 
-        return df, x, y, z, a, b
+        nvars = sum([sum([np.product(var.shape) for var in [xh[h], xdc[h], y[h], z[h]]]) for h in range(len(hospitals))])
+        print("nvars:",nvars)
+        df.loc[(day,hospitals[h].name),"nvars"] = nvars
+
+        return df, xh, xdc, y, z
 
     else:
-        df.loc[(day,name),"nvars"] = max(df.loc[(day,name),"nvars"], sum([np.product(var.shape) for var in [x, y, z]]))
 
-        return df, x, y, z
+        # Get the values of the model variable as found for the optimal solution.
+        x = np.zeros([len(hospitals[0].inventory), len(hospitals[0].requests)])
+        y = np.zeros([len(hospitals[0].requests)])
+        z = np.zeros([len(hospitals[0].requests), len(PARAMS.major + PARAMS.minor)])
+
+        for var in model.getVars():
+            var_name = re.split(r'\W+', var.varName)[0]
+            if var_name == "x":
+                index0 = int(re.split(r'\W+', var.varName)[1])
+                index1 = int(re.split(r'\W+', var.varName)[2])
+                x[index0, index1] = var.X
+            if var_name == "y":
+                index0 = int(re.split(r'\W+', var.varName)[1])
+                y[index0] = var.X
+            if var_name == "z":
+                index0 = int(re.split(r'\W+', var.varName)[1])
+                index1 = int(re.split(r'\W+', var.varName)[2])
+                z[index0, index1] = var.X
+
+        if SETTINGS.line == "off":
+            # o = np.zeros([len(inventory)])
+            a = np.zeros([len(hospitals[0].inventory), SETTINGS.init_days + SETTINGS.test_days])
+            b = np.zeros([len(hospitals[0].inventory), SETTINGS.init_days + SETTINGS.test_days])
+            for var in model.getVars():
+                var_name = re.split(r'\W+', var.varName)[0]
+                # if var_name == "o":
+                #     index0 = int(re.split(r'\W+', var.varName)[1])
+                #     o[index0] = var.X
+                if var_name == "a":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    index1 = int(re.split(r'\W+', var.varName)[2])
+                    a[index0, index1] = var.X
+                if var_name == "b":
+                    index0 = int(re.split(r'\W+', var.varName)[1])
+                    index1 = int(re.split(r'\W+', var.varName)[2])
+                    b[index0, index1] = var.X
+
+            df.loc[(day,hospitals[0].name),"nvars"] = sum([np.product(var.shape) for var in [x, y, z, a, b]])
+
+            return df, x, y, z, a, b
+
+        else:
+            df.loc[(day,hospitals[0].name),"nvars"] = max(df.loc[(day,hospitals[0].name),"nvars"], sum([np.product(var.shape) for var in [x, y, z]]))
+
+            return df, x, y, z
 
     # Write the values found to local files.
     # with open(SETTINGS.generate_filename("results") + f"x_{SETTINGS.strategy}_{hospital.htype[:3]}_{episode}-{day}.pickle", "wb") as f:
