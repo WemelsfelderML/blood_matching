@@ -25,20 +25,17 @@ class Settings():
         # "off": offline optimization.
         self.line = "on"
 
-        # Output files will be stored in directory results/[this name].
-        self.model_name = "daily 2 years"
-
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
         # Only the results of test days will be logged.
-        self.test_days = 2 * 365
+        self.test_days = 365
         self.init_days = 0
 
         # (x,y): Episode numbers range(x,y) will be optimized.
         # The total number of simulations executed will thus be y - x.
-        self.episodes = (0,25)
+        self.episodes = (0,5)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
@@ -60,6 +57,9 @@ class Settings():
         # self.inv_size_factor_dc = 5         # CHANGE
         self.inv_size_factor_dc = 6
         self.inv_size_factor_hosp = 3
+
+        # Output files will be stored in directory results/[this name].
+        self.model_name = f"I-R verhouding {self.inv_size_factor_hosp}x"
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
