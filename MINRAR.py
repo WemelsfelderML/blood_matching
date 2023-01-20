@@ -206,24 +206,24 @@ class MINRAR():
         # Assign a higher shortage penalty to requests with today as their issuing date.
         model.setObjectiveN(expr = quicksum(y[r] * (((len(R)-1) * t[r]) + 1) for r in R.keys()), index=0, priority=1, name="shortages") 
         # CHANGE
-        if "patgroups" in SETTINGS.strategy:
-            model.setObjectiveN(expr =  quicksum(
-                                            quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +               # Mismatches on minor antigens.
-                                            quicksum((math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                # FIFO penalties.
-                                                    + ((bi[i] - br[r]) * x[i,r])                                                             # Product usability on major antigens.
-                                            for i in I.keys()) 
-                                        for r in R.keys()) +
-                                        quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k]       # Minor antigen substitution.
-                                        for r in [r for r in R.keys() if R[r].patgroup in ["Wu45", "Other"]] for i in I.keys() for k in self.A_minor.values()), index=1, priority=0, name="other")
         # if "patgroups" in SETTINGS.strategy:
-        #     model.setObjectiveN(expr = quicksum(
-        #                                     quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +                                                  # Mismatches on minor antigens.
-        #                                     quicksum(
-        #                                         quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in self.A_minor.values())  # Minor antigen substitution.
-        #                                         + (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                                                   # FIFO penalties.
-        #                                         + ((bi[i] - br[r]) * x[i,r])                                                                                                # Product usability on major antigens.
+        #     model.setObjectiveN(expr =  quicksum(
+        #                                     quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +               # Mismatches on minor antigens.
+        #                                     quicksum((math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                # FIFO penalties.
+        #                                             + ((bi[i] - br[r]) * x[i,r])                                                             # Product usability on major antigens.
         #                                     for i in I.keys()) 
-        #                                 for r in R.keys()), index=1, priority=0, name="other")
+        #                                 for r in R.keys()) +
+        #                                 quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k]       # Minor antigen substitution.
+        #                                 for r in [r for r in R.keys() if R[r].patgroup in ["Wu45", "Other"]] for i in I.keys() for k in self.A_minor.values()), index=1, priority=0, name="other")
+        if "patgroups" in SETTINGS.strategy:
+            model.setObjectiveN(expr = quicksum(
+                                            quicksum(z[r,k] * self.w[self.P[R[r].patgroup],k] for k in self.A.values()) +                                                  # Mismatches on minor antigens.
+                                            quicksum(
+                                                quicksum(x[i,r] * self.w[self.P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in self.A_minor.values())  # Minor antigen substitution.
+                                                + (math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,r])                                                                   # FIFO penalties.
+                                                + ((bi[i] - br[r]) * x[i,r])                                                                                                # Product usability on major antigens.
+                                            for i in I.keys()) 
+                                        for r in R.keys()), index=1, priority=0, name="other")
         else:
             model.setObjectiveN(expr =  quicksum(
                                             quicksum(z[r,k] * self.w[k] for k in self.A.values()) +                                                   # Mismatches on minor antigens.
@@ -789,7 +789,10 @@ class MINRAR():
 
         I = {i : inventory[i] for i in range(len(inventory))}               # Set of all inventory products.
         H = {h : hospitals[h] for h in range(len(hospitals))}               # Set of all inventory products.
-        bi = [I[i].get_usability(PARAMS, hospitals, antigens=PARAMS.minor) for i in I.keys()]   # ["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]
+        
+        # CHANGE
+        # bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]
+        bi = [I[i].get_usability(PARAMS, hospitals, antigens=PARAMS.minor) for i in I.keys()]
 
 
         ###############

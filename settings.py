@@ -5,6 +5,7 @@ class Settings():
     def __init__(self):
 
         self.home_dir = "C:/Users/Merel/Documents/Sanquin/Projects/RBC matching/Paper patient groups/blood_matching/"
+        # self.home_dir = "/home/wemel01m/blood_matching/"
 
         # "demand": generate demand data
         # "supply": generate supply data
@@ -25,19 +26,19 @@ class Settings():
         self.line = "on"
 
         # Output files will be stored in directory results/[this name].
-        self.model_name = "test mismatches Ronald"
+        self.model_name = "daily 2 years"
 
         #########################
         # SIMULATION PARAMETERS #
         #########################
 
         # Only the results of test days will be logged.
-        self.test_days = 365
-        self.init_days = 31
+        self.test_days = 2 * 365
+        self.init_days = 0
 
         # (x,y): Episode numbers range(x,y) will be optimized.
         # The total number of simulations executed will thus be y - x.
-        self.episodes = (0,5)
+        self.episodes = (0,25)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
@@ -56,13 +57,14 @@ class Settings():
 
         # Size factor for distribution center and hospitals.
         # Average daily demand × size factor = inventory size.
-        self.inv_size_factor_dc = 5
+        # self.inv_size_factor_dc = 5         # CHANGE
+        self.inv_size_factor_dc = 6
         self.inv_size_factor_hosp = 3
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
-        self.strategy = "relimm_patweights"
+        self.strategy = "patgroups"
         self.patgroup_musts = True
  
 
@@ -73,9 +75,9 @@ class Settings():
         self.donor_eth_distr = [1, 0, 0]  # [Caucasian, African, Asian]
         
         if sum(self.n_hospitals.values()) > 1:
-            self.supply_size = (self.init_days + self.test_days) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] * self.inv_size_factor_hosp for htype in self.n_hospitals.keys()])
+            self.supply_size = (self.init_days + self.test_days) * self.inv_size_factor_dc * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] for htype in self.n_hospitals.keys()])
         else:
-            self.supply_size = (self.init_days + self.test_days) * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] * self.inv_size_factor_hosp for htype in self.n_hospitals.keys()])
+            self.supply_size = (self.init_days + self.test_days) * self.inv_size_factor_hosp * sum([self.n_hospitals[htype] * self.avg_daily_demand[htype] for htype in self.n_hospitals.keys()])
 
 
         ##########################

@@ -42,12 +42,12 @@ def generate_supply(SETTINGS, PARAMS):
         random.shuffle(index)
         df = df.loc[index]
 
-        # inventory_size = SETTINGS.inv_size_factor_hosp * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
-        # units = []
-        # for _ in range(inventory_size):
-        #     unit = Unit(Blood(PARAMS, "Caucasian", major="AB+"))
-        #     units.append(unit.blood.vector + [unit.blood.ethnicity])
-        # df = pd.concat([pd.DataFrame(units, columns = PARAMS.major+PARAMS.minor+["Ethnicity"]), df.iloc[inventory_size:]])
+        inventory_size = SETTINGS.inv_size_factor_hosp * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
+        units = []
+        for _ in range(inventory_size):
+            unit = Unit(Blood(PARAMS, "Caucasian", major="AB+"))
+            units.append(unit.blood.vector + [unit.blood.ethnicity])
+        df = pd.concat([pd.DataFrame(units, columns = PARAMS.major+PARAMS.minor+["Ethnicity"]), df.iloc[inventory_size:]])
         
         df.to_csv(SETTINGS.home_dir + f"supply/{size}/{name}_{i}.csv", index=False)
 
@@ -72,18 +72,16 @@ def generate_units(SETTINGS, PARAMS, size):
         units.append(unit.blood.vector + [unit.blood.ethnicity])
         majors_sampled[unit.blood.major] += 1
 
-    for _ in range(round(size * SETTINGS.donor_eth_distr[0])):
-        unit = Unit(Blood(PARAMS, "Caucasian"))
-        units.append(unit.blood.vector + [unit.blood.ethnicity])
+    # for _ in range(round(size * SETTINGS.donor_eth_distr[0])):
+    #     unit = Unit(Blood(PARAMS, "Caucasian"))
+    #     units.append(unit.blood.vector + [unit.blood.ethnicity])
 
-    # # For each major blood group determine how many units should be additionally sampled to make sure that the overall list has the correct ABOD distribution
-    # for major in SETTINGS.ABOD:
-    #     num_to_sample = round(SETTINGS.donor_ABOD_distr[major] * size) - majors_sampled[major]
+    # For each major blood group determine how many units should be additionally sampled to make sure that the overall list has the correct ABOD distribution
+    for major in PARAMS.ABOD:
+        num_to_sample = round(PARAMS.donor_ABOD_distr[major] * size) - majors_sampled[major]
         
-    #     for _ in range(max(0,num_to_sample)):
-    #         unit = Unit(Blood(PARAMS, "Caucasian", major=major))
-    #         units.append(unit.blood.vector + [unit.blood.ethnicity])
+        for _ in range(max(0,num_to_sample)):
+            unit = Unit(Blood(PARAMS, "Caucasian", major=major))
+            units.append(unit.blood.vector + [unit.blood.ethnicity])
 
     return units
-
-
