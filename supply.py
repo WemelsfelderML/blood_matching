@@ -42,12 +42,15 @@ def generate_supply(SETTINGS, PARAMS):
         random.shuffle(index)
         df = df.loc[index]
 
-        inventory_size = SETTINGS.inv_size_factor_hosp * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
-        units = []
-        for _ in range(inventory_size):
-            unit = Unit(Blood(PARAMS, "Caucasian", major="AB+"))
-            units.append(unit.blood.vector + [unit.blood.ethnicity])
-        df = pd.concat([pd.DataFrame(units, columns = PARAMS.major+PARAMS.minor+["Ethnicity"]), df.iloc[inventory_size:]])
+        # if sum(SETTINGS.n_hospitals.values()) > 1:
+        #     inventory_size = SETTINGS.inv_size_factor_dc * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
+        # else:
+        #     inventory_size = SETTINGS.inv_size_factor_hosp * sum([SETTINGS.n_hospitals[htype] * SETTINGS.avg_daily_demand[htype] for htype in SETTINGS.n_hospitals.keys()])
+        # units = []
+        # for _ in range(inventory_size):
+        #     unit = Unit(Blood(PARAMS, "Caucasian", major="AB+"))
+        #     units.append(unit.blood.vector + [unit.blood.ethnicity])
+        # df = pd.concat([pd.DataFrame(units, columns = PARAMS.major+PARAMS.minor+["Ethnicity"]), df.iloc[inventory_size:]])
         
         df.to_csv(SETTINGS.home_dir + f"supply/{size}/{name}_{i}.csv", index=False)
 

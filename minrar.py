@@ -106,11 +106,15 @@ class MINRAR():
             df.loc[(day,name),f"num outdates {ip.major}"] += 1
 
         df.loc[(day,name),"num unavoidable shortages"] = max(0, sum([R[r].num_units for r in r_today]) - len(I))
-        for r in [r for r in r_today if y[r] == 1]:
+        for r in [r for r in r_today if y[r] > 0]:
             rq = R[r]
             df.loc[(day,name),"num shortages"] += 1
             df.loc[(day,name),f"num shortages {rq.major}"] += 1
             df.loc[(day,name),f"num shortages {rq.patgroup}"] += 1
+            # print(x[:,8])
+            # print(x[:,14])
+            print(rq.num_units)
+            print(xr[r])
             df.loc[(day,name),f"num {rq.patgroup} {int(rq.num_units - xr[r])} units short"] += 1
 
         if SETTINGS.line == "off":
@@ -169,11 +173,17 @@ class MINRAR():
         # y: For each request r∈R, y[r] = 1 if request r can not be fully satisfied (shortage), 0 otherwise.
         # z: For each request r∈R and antigen k∈A, z[r,k] = 1 if request r is mismatched on antigen k, 0 otherwise.
 
-        x = model.addVars(len(I), len(R), name='x', vtype=GRB.BINARY, lb=0, ub=1)
+        x = model.addVars(len(I), len(R), name='x', vtype=GRB.CONTINUOUS, lb=0, ub=1)
         y = model.addVars(len(R), name='y', vtype=GRB.BINARY, lb=0, ub=1)
-        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.BINARY, lb=0, ub=1)
+        z = model.addVars(len(R), len(self.A), name='z', vtype=GRB.CONTINUOUS, lb=0, ub=1)
 
         model.update()
+
+        for r in R.keys():
+            # Remove variable x[i,r] if the match is not timewise or antigen compatible.
+            for i in I.keys():
+                if (C[i,r] == 0) or (T[i,r] == 0):
+                    model.remove(x[i,r])
 
 
         #################
@@ -189,7 +199,7 @@ class MINRAR():
 
         # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
         # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
-        model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
+        # model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
 
         # CHANGE
         # model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in self.A.values())
@@ -307,21 +317,36 @@ class MINRAR():
         xdc = []
         y = []
         z = []
+        # for h in H.keys():
+        #     xh.append(model.addVars(len(Ih[h]), len(R[h]), name=f"xh{h}", vtype=GRB.BINARY, lb=0, ub=1))
+        #     xdc.append(model.addVars(len(Idc), len(R[h]), name=f"xdc{h}", vtype=GRB.BINARY, lb=0, ub=1))
+        #     y.append(model.addVars(len(R[h]), name=f"y{h}", vtype=GRB.BINARY, lb=0, ub=1))
+        #     z.append(model.addVars(len(R[h]), len(self.A), name=f"z{h}", vtype=GRB.BINARY, lb=0, ub=1))
         for h in H.keys():
-            xh.append(model.addVars(len(Ih[h]), len(R[h]), name=f"xh{h}", vtype=GRB.BINARY, lb=0, ub=1))
-            xdc.append(model.addVars(len(Idc), len(R[h]), name=f"xdc{h}", vtype=GRB.BINARY, lb=0, ub=1))
+            xh.append(model.addVars(len(Ih[h]), len(R[h]), name=f"xh{h}", vtype=GRB.CONTINUOUS, lb=0, ub=1))
+            xdc.append(model.addVars(len(Idc), len(R[h]), name=f"xdc{h}", vtype=GRB.CONTINUOUS, lb=0, ub=1))
             y.append(model.addVars(len(R[h]), name=f"y{h}", vtype=GRB.BINARY, lb=0, ub=1))
-            z.append(model.addVars(len(R[h]), len(self.A), name=f"z{h}", vtype=GRB.BINARY, lb=0, ub=1))
-
-
+            z.append(model.addVars(len(R[h]), len(self.A), name=f"z{h}", vtype=GRB.CONTINUOUS, lb=0, ub=1))
 
         model.update()
 
+
         for h in H.keys():
             for r in R[h].keys():
-                if R[h][r].patgroup == "Other":
-                    for i in range(len(Idc)):
-                        # xdc[i,r].ub = 0
+
+                # Remove variable xh[h][i,r] if the match is not timewise or antigen compatible.
+                for i in Ih[h].keys():
+                    if (Ch[h][i,r] == 0) or (Th[h][i,r] == 0):
+                        model.remove(xh[h][i,r])
+                
+                # Remove variable xdc[h][i,r] if the match is not timewise or antigen compatible.
+                for i in Idc.keys():
+                    if (Cdc[h][i,r] == 0) or (Tdc[h][i,r] == 0):
+                        model.remove(xdc[h][i,r])
+
+                # Remove variable xdc[h][i,r] if the issuing date of request r is today.
+                if t[h][r] == 1:
+                    for i in Idc.keys():
                         model.remove(xdc[h][i,r])
 
 
@@ -343,9 +368,9 @@ class MINRAR():
 
             # Force x[i,r] to 0 if a match between product i∈I and request r∈R is incompatible on antigens that are a 'must'.
             # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
-            model.addConstrs(xh[h][i,r] <= Ch[h][i,r] * Th[h][i,r] for i in Ihh.keys() for r in Rh.keys())
-            model.addConstrs(xdc[h][i,r] <= Cdc[h][i,r] * Tdc[h][i,r] for i in Idc.keys() for r in Rh.keys())
-            ncons += (len(Ihh) * len(Rh)) + (len(Idc) * len(Rh))
+            # model.addConstrs(xh[h][i,r] <= Ch[h][i,r] * Th[h][i,r] for i in Ihh.keys() for r in Rh.keys())
+            # model.addConstrs(xdc[h][i,r] <= Cdc[h][i,r] * Tdc[h][i,r] for i in Idc.keys() for r in Rh.keys())
+            # ncons += (len(Ihh) * len(Rh)) + (len(Idc) * len(Rh))
 
             # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
             model.addConstrs(quicksum(xh[h][i,r] * Ihh[i].vector[k] * (1 - Rh[r].vector[k]) for i in Ihh.keys()) <= z[h][r,k] * Rh[r].num_units for r in Rh.keys() for k in self.A_no_Fyb.values())
@@ -358,12 +383,12 @@ class MINRAR():
             ncons += len(Rh) + len(Rh.keys())
 
             # For each request, the number of products allocated by the hospital and DC together should not exceed the number of units requested.
-            model.addConstrs(quicksum(xh[h][i,r] for i in Ihh.keys()) + quicksum(xdc[h][i,r] for i in Idc.keys()) <= Rh[r].num_units for r in Rh.keys())
-            ncons += len(Rh)
+            # model.addConstrs(quicksum(xh[h][i,r] for i in Ihh.keys()) + quicksum(xdc[h][i,r] for i in Idc.keys()) <= Rh[r].num_units for r in Rh.keys())
+            # ncons += len(Rh)
 
             # Force xdc[i,r] to 0 if the issuing date of request r is today.
-            model.addConstrs(xdc[h][i,r] + t[h][r] <= 1 for i in Idc.keys() for r in Rh.keys())
-            ncons += len(Idc) * len(Rh)
+            # model.addConstrs(xdc[h][i,r] + t[h][r] <= 1 for i in Idc.keys() for r in Rh.keys())
+            # ncons += len(Idc) * len(Rh)
 
             # For each inventory product i∈I, ensure that i can not be issued more than once.
             model.addConstrs(quicksum(xh[h][i,r] for r in Rh.keys()) <= 1 for i in Ihh.keys())
