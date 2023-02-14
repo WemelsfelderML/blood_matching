@@ -20,9 +20,9 @@ class Settings():
         # OPTIMIZATION SETTINGS #
         #########################
 
-        # "ILP": Use linear optimization.
+        # "LP": Use linear programming.
         # "RL": Use reinforcement learning.
-        self.method = "ILP"
+        self.method = "LP"
 
         # "on": online optimization.
         # "off": offline optimization.
@@ -32,20 +32,21 @@ class Settings():
         # SIMULATION PARAMETERS #
         #########################
 
+        # FOLARIN
         # Only the results of test days will be logged.
-        self.test_days = 2 * 365
+        self.test_days = 365
         self.init_days = 2 * 35
 
         # (x,y): Episode numbers range(x,y) will be optimized.
         # The total number of simulations executed will thus be y - x.
-        self.episodes = (20,25)
+        self.episodes = (0,5)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
         # "university": Use the patient group distribution of the AMC, a university hospital, with average daily demand of 100 products.
         self.n_hospitals = {
-            "regional" : 2,
-            "university" : 1,
+            "regional" : 1,
+            "university" : 0,
             "manual" : 0,
         }
 
@@ -57,8 +58,8 @@ class Settings():
 
         # Size factor for distribution center and hospitals.
         # Average daily demand × size factor = inventory size.
-        # self.inv_size_factor_dc = 5         # CHANGE
-        self.inv_size_factor_dc = 6
+        self.inv_size_factor_dc = 6         # CHANGE (no doubt)
+        # self.inv_size_factor_dc = 5
         self.inv_size_factor_hosp = 3
 
         # "major": Only match on the major antigens.

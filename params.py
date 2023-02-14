@@ -13,17 +13,9 @@ class Params():
         self.max_age = 35
 
         # Major blood groups, major antigens, and minor antigens.
-        self.ABOD = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
+        self.ABOD =  ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
         self.major = ["A", "B", "D"]
-        self.minor = ["C", "c", "E", "e", "K", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # "k", "M", "N"
-    
-        #######################
-        # MISMATCHING WEIGHTS #
-        #######################
-
-        # Weights to be used by the model as penalties for mismatching certain antigens (for certain patients).
-        self.relimm_weights = pd.read_csv(SETTINGS.home_dir + "data/relimm_weights.csv")
-        self.patgroup_weights = pd.read_csv(SETTINGS.home_dir + "data/patgroup_weights.csv", index_col="patgroup")
+        self.minor = ["C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # 
 
 
         ##################
@@ -31,7 +23,7 @@ class Params():
         ##################
 
         # Names of all considered patient groups (should correspond to keys of the dictionaries below).
-        self.patgroups = ["Other", "Wu45", "MDS", "Thal", "AIHA", "ALA", "SCD"]
+        self.patgroups = ["ALA", "SCD", "Thal", "MDS", "AIHA", "Wu45", "Other"]
 
         # Distribution of patient groups in all hospital types.
         self.patgroup_distr = {
@@ -41,14 +33,46 @@ class Params():
             "manual" : {"Other":0.64605, "Wu45":0.10250, "MDS":0.04542, "Thal":0.05665, "AIHA":0.02731, "ALA":0.06543, "SCD":0.05665},
         }
 
+    
+        ###########
+        # WEIGHTS #
+        ###########
+
+        # Relative immunogenicity weights, to be used by the model as penalties for mismatching certain antigens.
+        self.relimm_weights = pd.DataFrame(
+            index = self.patgroups, 
+            columns = self.major + self.minor, 
+            #        A   B   D   C       c       E       e       K       k  M  N  S       s  Fya     Fyb     Jka     Jkb     
+            data = [[10, 10, 10, 0.0345, 0.0705, 0.2395, 0.0836, 0.3838, 0, 0, 0, 0.0131, 0, 0.0443, 0.0131, 0.0836, 0.0033]]
+            )
+
+        # Patient group specific weights, to be used by the model as penalties for mismatching certain antigens.
+        self.patgroup_weights = pd.DataFrame(
+            index = self.patgroups, 
+            columns = self.major + self.minor, 
+            #        A   B   D   C       c       E       e       K       k  M  N  S       s       Fya     Fyb     Jka     Jkb     
+            data = [[10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.2020, 0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # ALA
+                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.3367, 0.1282, 10,     0.6734, 10,     10    ], # SCD
+                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.1010, 0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # Thal
+                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.1010, 0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # MDS
+                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.2020, 0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # AIHA
+                    [10, 10, 10, 0.0265, 10,     10,     0.0644, 10,     0, 0, 0, 0.0034, 0.0013, 0.0227, 0.0067, 0.0429, 0.0017], # Wu45
+                    [10, 10, 10, 0.0265, 0.0543, 0.1843, 0.0644, 0.2954, 0, 0, 0, 0.0034, 0.0013, 0.0227, 0.0067, 0.0429, 0.0017]] # Other
+            )
+
+
+        #####################
+        # SUPPLY AND DEMAND #
+        #####################
+
         # Each column specifies the probability of a request becoming known 0, 1, 2, etc. days before its issuing date.
-        # CHANGE
+        # CHANGE (no doubt)
         # self.request_lead_time_probabilities = {
-        #     "Other" : [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                   # Other = uniform between 0 and 6
-        #     "Wu45" : [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                    # Wu45 = 50/50 on the day or one day ahead.
+        #     "Other" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],               # Other = same day or day before
+        #     "Wu45" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                # Wu45 = same day or day before
         #     "MDS" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                     # MDS = 7 days ahead
         #     "Thal" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                    # Thal = 7 days ahead
-        #     "AIHA" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                    # AIHA = on the same day
+        #     "AIHA" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                    # AIHA = 7 days ahead
         #     "ALA" : [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 0, 0, 0, 0, 0, 0, 0],       # ALA = uniform between 0 and 6
         #     "SCD" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]                      # SCD = 7 days ahead
         # }
@@ -78,7 +102,7 @@ class Params():
 
         # All possible antigen profiles for antigens A, B,
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.ABO_genotypes = [
+        self.ABO_phenotypes = [
             [ 0, 0 ],
             [ 0, 1 ],
             [ 1, 0 ],
@@ -92,7 +116,7 @@ class Params():
 
         # All possible antigen profiles for antigens D, C, c, E, e,
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.Rhesus_genotypes = [
+        self.Rhesus_phenotypes = [
             [0,1,1,1,1],
             [0,1,0,1,0],
             [0,1,0,0,1],
@@ -120,7 +144,7 @@ class Params():
 
         # All possible antigen profiles for antigens K, k,
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.Kell_genotypes = [
+        self.Kell_phenotypes = [
             [ 0, 0 ],
             [ 1, 0 ],
             [ 0, 1 ],
@@ -134,7 +158,7 @@ class Params():
 
         # All possible antigen profiles for antigens M, N, S, s,
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.MNS_genotypes = [
+        self.MNS_phenotypes = [
             [1,0,1,0],
             [1,0,1,1],
             [1,0,0,1],
@@ -156,7 +180,7 @@ class Params():
 
         # All possible antigen profiles for antigens Fya, Fyb, 
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.Duffy_genotypes = [
+        self.Duffy_phenotypes = [
             [ 0, 0 ],
             [ 1, 0 ],
             [ 0, 1 ],
@@ -170,7 +194,7 @@ class Params():
 
         # All possible antigen profiles for antigens Jka, Jkb,
         # with 1 stating that the blood is positive for that antigen, and 0 that it is negative.
-        self.Kidd_genotypes = [
+        self.Kidd_phenotypes = [
             [ 0, 0 ],
             [ 1, 0 ],
             [ 0, 1 ],
