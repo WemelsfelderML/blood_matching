@@ -1,20 +1,19 @@
 import pandas as pd
+import os
 
 class Settings():
 
     def __init__(self):
 
         self.home_dir = "C:/Users/Merel/Documents/Sanquin/Projects/RBC matching/Paper patient groups/blood_matching/"
-        # self.home_dir = "/home/wemel01m/blood_matching/"
 
         # "demand": generate demand data
         # "supply": generate supply data
         # "optimize": run simulations and optimize matching
         self.mode = "optimize"
-        # TODO: automatically create data before optimizing if not yet available in folders
 
-        # Output files will be stored in directory results/[this name].
-        self.model_name = "daily 2 years"
+        # Output files will be stored in directory results/[model_name].
+        self.model_name = "Daily 1 year"
 
         #########################
         # OPTIMIZATION SETTINGS #
@@ -32,14 +31,13 @@ class Settings():
         # SIMULATION PARAMETERS #
         #########################
 
-        # FOLARIN
         # Only the results of test days will be logged.
         self.test_days = 365
         self.init_days = 2 * 35
 
         # (x,y): Episode numbers range(x,y) will be optimized.
         # The total number of simulations executed will thus be y - x.
-        self.episodes = (0,5)
+        self.episodes = (0,10)
 
         # Number of hospitals considered. If more than 1 (regional and university combined), a distribution center is included.
         # "regional": Use the patient group distribution of the OLVG, a regional hospital, with average daily demand of 50 products.
@@ -47,27 +45,25 @@ class Settings():
         self.n_hospitals = {
             "regional" : 1,
             "university" : 0,
-            "manual" : 0,
+            # "manual" : 0,
         }
 
         self.avg_daily_demand = {
             "regional" : 50,
             "university" : 100,
-            "manual" : 10,
+            # "manual" : 10,
         }
 
         # Size factor for distribution center and hospitals.
         # Average daily demand × size factor = inventory size.
-        self.inv_size_factor_dc = 6         # CHANGE (no doubt)
-        # self.inv_size_factor_dc = 5
+        self.inv_size_factor_dc = 6
         self.inv_size_factor_hosp = 3
 
         # "major": Only match on the major antigens.
         # "relimm": Use relative immunogenicity weights for mismatching.
         # "patgroups": Use patient group specific mismatching weights.
         self.strategy = "patgroups"
-        self.patgroup_musts = True
- 
+        self.patgroup_musts = True 
 
         ##############################
         # GENERATING DEMAND / SUPPLY #
@@ -85,21 +81,16 @@ class Settings():
         # REINFORCEMENT LEARNING #
         ##########################
 
-        # # "train" for training the RL model
-        # # "test" for running simulations with saved model
-        # self.RL_mode = "train"
+        # "train" for training the RL model
+        # "test" for running simulations with saved model
+        self.RL_mode = "train"
 
-        # self.nn_update_iter = 5
-        # self.max_memory_size = 1000
-        # self.train_iters = 10
-        # self.batch_size = 20
-        # self.gamma = 0.99
-        # self.alpha = 0.01
-        # self.dropout = 0.2
-        # self.exploration_max = 1.0
-        # self.exploration_min = 0.01
-        # self.exploration_decay = 0.1
-
+        self.epsilon = 1.0
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.995
+        self.alpha = 0.01           # learning rate
+        self.gamma = 0.99           # discount factor
+        self.batch_size = 50
 
         ####################
         # GUROBI OPTIMIZER #
@@ -134,7 +125,7 @@ class Settings():
         ##########
 
         # General information.
-        header = ["day", "location", "model name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
+        header = ["logged", "day", "location", "model name", "supply scenario", "demand scenario", "avg daily demand", "inventory size", "test days", "init days"]
 
         # Gurobi optimizer info.
         header += ["gurobi status", "nvars", "calc time"]
@@ -187,6 +178,7 @@ class Settings():
         # ADD BASIC INFO #
         ##################
 
+        df.loc[:,"logged"] = False
         df.loc[:,"model name"] = self.model_name
         df.loc[:,"test days"] = self.test_days
         df.loc[:,"init days"] = self.init_days
@@ -199,3 +191,9 @@ class Settings():
             df.loc[indices,"inventory size"] = hospital.inventory_size
         
         return df
+
+
+    # Check whether a given path exists, and create the path if it doesn't.
+    def check_dir_existence(self, path):
+        if os.path.exists(path) == False:
+            os.mkdir(path)

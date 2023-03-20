@@ -55,7 +55,10 @@ def minrar_multiple_hospitals(SETTINGS, PARAMS, dc, hospitals, day, df):
     Tdc = {h : timewise_possible(SETTINGS, PARAMS, Idc, R[h], day) for h in H.keys()}       # The product in the distribution center's inventory is not outdated before issuing date of request.
 
     # For each request r∈R, t[r] = 1 if the issuing day is today, 0 if it lies in the future.
-    t = [[1 - min(1, R[h][r].day_issuing - day) for r in R[h].keys()] for h in H.keys()]
+    # t = [[1 - min(1, R[h][r].day_issuing - day) for r in R[h].keys()] for h in H.keys()]
+
+    # t[r] = 2 if issuing day of r is today, t[r] = 1 if it is tomorrow, and t[r] = 0 if it is more than one day in the future.
+    t = [[1 - min(1, R[h][r].day_issuing - (day+1)) for r in R[h].keys()] for h in H.keys()]
 
     ############
     ## GUROBI ##
@@ -108,7 +111,7 @@ def minrar_multiple_hospitals(SETTINGS, PARAMS, dc, hospitals, day, df):
                     model.remove(z[h][r,k])
 
             # Remove variable xdc[h][i,r] if the issuing date of request r is today.
-            if t[h][r] == 1:
+            if t[h][r] == 2:
                 for i in Idc.keys():
                     model.remove(xdc[h][i,r])
 
@@ -145,12 +148,8 @@ def minrar_multiple_hospitals(SETTINGS, PARAMS, dc, hospitals, day, df):
         ncons += len(Rh) + len(Rh.keys())
 
         # For each request, the number of products allocated by the hospital and DC together should not exceed the number of units requested.
-        # model.addConstrs(quicksum(xh[h][i,r] for i in Ihh.keys()) + quicksum(xdc[h][i,r] for i in Idc.keys()) <= Rh[r].num_units for r in Rh.keys())
+        model.addConstrs(quicksum(xh[h][i,r] for i in Ihh.keys()) + quicksum(xdc[h][i,r] for i in Idc.keys()) <= Rh[r].num_units for r in Rh.keys())
         # ncons += len(Rh)
-
-        # Force xdc[i,r] to 0 if the issuing date of request r is today.
-        # model.addConstrs(xdc[h][i,r] + t[h][r] <= 1 for i in Idc.keys() for r in Rh.keys())
-        # ncons += len(Idc) * len(Rh)
 
         # For each inventory product i∈I, ensure that i can not be issued more than once.
         model.addConstrs(quicksum(xh[h][i,r] for r in Rh.keys()) <= 1 for i in Ihh.keys())
@@ -171,18 +170,18 @@ def minrar_multiple_hospitals(SETTINGS, PARAMS, dc, hospitals, day, df):
     if "patgroups" in SETTINGS.strategy:
         model.setObjectiveN(expr = 5 * quicksum(quicksum(quicksum(z[h][r,k] * w[P[R[h][r].patgroup],k] for r in R[h].keys()) for h in H.keys()) for k in A.values())
                                     + quicksum(quicksum(0.5 ** ((PARAMS.max_age - Ih[h][i].age - 1) / 5) * xh[h][i,r] for i in Ih[h].keys() for r in R[h].keys()) for h in H.keys())
-                                    + quicksum(quicksum(quicksum(0.5 ** ((PARAMS.max_age - Idc[i].age - 1) / 5) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
+                                    # + quicksum(quicksum(quicksum(0.5 ** ((PARAMS.max_age - Idc[i].age - 1) / 5) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
                                     + quicksum(quicksum((bih[h][i] - br[h][r]) * xh[h][i,r] for i in Ih[h].keys() for r in R[h].keys()) for h in H.keys())
-                                    + quicksum(quicksum(quicksum((bidc[i] - br[h][r]) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
+                                    # + quicksum(quicksum(quicksum((bidc[i] - br[h][r]) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
                                     + quicksum(quicksum(quicksum(xh[h][i,r] * w[P[R[h][r].patgroup],k] * (1 - Ih[h][i].vector[k]) * R[h][r].vector[k] for r in [r for r in R[h].keys() if R[h][r].patgroup in ["Wu45", "Other"]] for i in Ih[h].keys()) for h in H.keys()) for k in A_minor.values())
                                     + quicksum(quicksum(quicksum(xdc[h][i,r] * w[P[R[h][r].patgroup],k] * (1 - Idc[i].vector[k]) * R[h][r].vector[k] for r in [r for r in R[h].keys() if R[h][r].patgroup in ["Wu45", "Other"]]) for h in H.keys()) for i in Idc.keys() for k in A_minor.values())
                                     , index=1, priority=0, name="other")
     else:
         model.setObjectiveN(expr = 5 * quicksum(quicksum(quicksum(z[h][r,k] * w[k] for r in R[h].keys()) for h in H.keys()) for k in A.values())
                                     + quicksum(quicksum(0.5 ** ((PARAMS.max_age - Ih[h][i].age - 1) / 5) * xh[h][i,r] for i in Ih[h].keys() for r in R[h].keys()) for h in H.keys())
-                                    + quicksum(quicksum(quicksum(0.5 ** ((PARAMS.max_age - Idc[i].age - 1) / 5) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
+                                    # + quicksum(quicksum(quicksum(0.5 ** ((PARAMS.max_age - Idc[i].age - 1) / 5) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
                                     + quicksum(quicksum((bih[h][i] - br[h][r]) * xh[h][i,r] for i in Ih[h].keys() for r in R[h].keys()) for h in H.keys())
-                                    + quicksum(quicksum(quicksum((bidc[i] - br[h][r]) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
+                                    # + quicksum(quicksum(quicksum((bidc[i]  - br[h][r]) * xdc[h][i,r] for r in R[h].keys()) for h in H.keys()) for i in Idc.keys())
                                     + quicksum(quicksum(quicksum(xh[h][i,r] * w[k] * (1 - Ih[h][i].vector[k]) * R[h][r].vector[k] for r in [r for r in R[h].keys() if R[h][r].patgroup in ["Wu45", "Other"]] for i in Ih[h].keys()) for h in H.keys()) for k in A_minor.values())
                                     + quicksum(quicksum(quicksum(xdc[h][i,r] * w[k] * (1 - Idc[i].vector[k]) * R[h][r].vector[k] for r in [r for r in R[h].keys() if R[h][r].patgroup in ["Wu45", "Other"]]) for h in H.keys()) for i in Idc.keys() for k in A_minor.values())
                                     , index=1, priority=0, name="other")
@@ -304,7 +303,6 @@ def allocate_remaining_supply_from_dc(SETTINGS, PARAMS, day, inventory, hospital
     I = {i : inventory[i] for i in range(len(inventory))}
     
     # Get the usability of all inventory products with respect to the distribution of major blood types in the patient population.
-    # bi = [I[i].get_usability(PARAMS, hospitals, antigens=["C", "c", "E", "e", "K", "k", "Fya", "Fyb", "Jka", "Jkb"]) for i in I.keys()]   # CHANGE (testing needed)
     bi = [I[i].get_usability(PARAMS, hospitals, antigens=PARAMS.minor) for i in I.keys()]
 
 
@@ -335,9 +333,8 @@ def allocate_remaining_supply_from_dc(SETTINGS, PARAMS, day, inventory, hospital
     ## OBJECTIVES ##
     ################
 
-    model.setObjective(expr = quicksum((math.exp(-4.852 * I[i].age / PARAMS.max_age) * x[i,h])      # FIFO penalties.
-                                        + (bi[i] * x[i,h])                                          # Product usability on major antigens.
-                                        for i in I.keys() for h in H.keys()))
+    model.setObjective(expr = quicksum(0.5 ** ((PARAMS.max_age - I[i].age - 1) / 5) * x[i,h] for i in I.keys() for h in H.keys())   # FIFO penalties.
+                            + quicksum(bi[i] * x[i,h] for i in I.keys() for h in H.keys()))                                         # Product usability on major antigens.
 
     # Minimize the objective functions.
     model.ModelSense = GRB.MINIMIZE

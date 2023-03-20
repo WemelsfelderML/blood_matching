@@ -4,8 +4,6 @@ import numpy as np
 # After obtaining the optimal variable values from the solved model, write corresponding results to a csv file.
 def log_results(SETTINGS, PARAMS, df, hospital, day, x=[], y=[], z=[], a=[], b=[]):
 
-    start = time.perf_counter()
-
     antigens = PARAMS.major + PARAMS.minor
 
     # Name of the hospital (e.g. "reg_2" or "uni_0").
@@ -21,7 +19,7 @@ def log_results(SETTINGS, PARAMS, df, hospital, day, x=[], y=[], z=[], a=[], b=[
     # Most results will be calculated only considering the requests that are issued today.
     r_today = [r for r in R.keys() if R[r].day_issuing == day]
 
-
+    df.loc[(day,name),"logged"] = True
     df.loc[(day,name),"num patients"] = len(r_today)                                                                            # number of patients
     df.loc[(day,name),"num units requested"] = sum([R[r].num_units for r in r_today])                                           # number of units requested
     for eth in ethnicities:
@@ -85,7 +83,7 @@ def log_results(SETTINGS, PARAMS, df, hospital, day, x=[], y=[], z=[], a=[], b=[
             # Get all antigens k on which product ip and request rq are mismatched.
             for ag in [antigens[k] for k in range(len(antigens)) if ip.vector[k] > rq.vector[k]]:
                 # Fy(a-b-) should only be matched on Fy(a), not on Fy(b). -> Fy(b-) only mismatch when Fy(a+)
-                if (ag != "Fyb") or (rq.vector[antigens.index("Fya")] == 1): # CHANGE (no doubt)
+                if (ag != "Fyb") or (rq.vector[antigens.index("Fya")] == 1):
                     mismatch[ag] = 1
                     df.loc[(day,name),[f"num mismatched units {rq.patgroup} {ag}"]] += 1        # number of mismatched units per patient group and antigen
 
@@ -110,6 +108,13 @@ def log_results(SETTINGS, PARAMS, df, hospital, day, x=[], y=[], z=[], a=[], b=[
     if SETTINGS.line == "off":
         df.loc[(day,name),"products available today"] = ",".join([str(i) for i in I.keys() if a[i,day] - b[i,day] == 1])    # this number should be equal to the inventory size provided in the settings
     
-    stop = time.perf_counter()
+
+    # Write the values found to pickle files.
+    # with open(SETTINGS.generate_filename("results") + f"x_{SETTINGS.strategy}_{hospital.htype[:3]}_{episode}-{day}.pickle", "wb") as f:
+    #     pickle.dump(x, f)
+    # with open(SETTINGS.generate_filename("results") + f"y_{SETTINGS.strategy}_{hospital.htype[:3]}_{e}.pickle", "wb") as f:
+    #     pickle.dump(y, f)
+    # with open(SETTINGS.generate_filename("results") + f"z_{SETTINGS.strategy}_{hospital.htype[:3]}_{e}.pickle", "wb") as f:
+    #     pickle.dump(z, f)
     
     return df 

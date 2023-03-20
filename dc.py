@@ -1,19 +1,25 @@
 import pandas as pd
+import pickle
+import sys
 
 from blood import *
 
 class Distribution_center():
     
-    def __init__(self, SETTINGS, PARAMS, hospitals, e):
+    def __init__(self, SETTINGS, PARAMS, hospitals, e, supply_index = 0,):
 
         # Name for the distribution center (currently not used)
         self.name = f"dc_{e}"
 
-        # Read the supply that was generated using SETTINGS.mode = "supply"
-        self.supply_data = pd.read_csv(SETTINGS.home_dir + f"supply/{SETTINGS.supply_size}/cau{round(SETTINGS.donor_eth_distr[0]*100)}_afr{round(SETTINGS.donor_eth_distr[1]*100)}_asi{round(SETTINGS.donor_eth_distr[2]*100)}_{e}.csv")
-        
+        try:
+            # Read the supply that was generated using SETTINGS.mode = "supply"
+            self.supply_data = pd.read_csv(SETTINGS.home_dir + f"supply/{SETTINGS.supply_size}/cau{round(SETTINGS.donor_eth_distr[0]*100)}_afr{round(SETTINGS.donor_eth_distr[1]*100)}_asi{round(SETTINGS.donor_eth_distr[2]*100)}_{e}.csv")
+        except:
+            print("Error: No supply data available. Generate supply data by changing the 'self.mode' variable in the 'settings.py' file to 'supply' and run main again.")
+            sys.exit(1)
+
         # Keep track of the supply index to know which item of the supply data to read next.
-        self.supply_index = 0
+        self.supply_index = supply_index
 
         # In the multi-hospital scenario, the distribution center also has its own inventory.
         if len(hospitals) > 1:
@@ -65,3 +71,8 @@ class Distribution_center():
             supply.append(Blood(PARAMS, index = data.loc[i,"Index"], ethnicity = data.loc[i,"Ethnicity"], major = vector_to_major([data.loc[i,a] for a in PARAMS.major]), minor = [data.loc[i,a] for a in PARAMS.minor], age = age))
 
         return supply
+
+
+    def pickle(self, path):
+        with open(path, 'wb') as f:
+            pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)

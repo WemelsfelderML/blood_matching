@@ -10,13 +10,13 @@ class Params():
         ####################
 
         # Shelf life of the blood products in inventory.
-        self.max_age = 35
+        self.max_age = 35           # The age at which inventory products expire, so the maximum age to be issued = 34. 
+        self.max_lead_time = 8      # Days 0,1,...,7.
 
         # Major blood groups, major antigens, and minor antigens.
         self.ABOD =  ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
         self.major = ["A", "B", "D"]
-        self.minor = ["C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] # 
-
+        self.minor = ["C", "c", "E", "e", "K", "k", "M", "N", "S", "s", "Fya", "Fyb", "Jka", "Jkb"] 
 
         ##################
         # PATIENT GROUPS #
@@ -40,24 +40,21 @@ class Params():
 
         # Relative immunogenicity weights, to be used by the model as penalties for mismatching certain antigens.
         self.relimm_weights = pd.DataFrame(
-            index = self.patgroups, 
-            columns = self.major + self.minor, 
-            #        A   B   D   C       c       E       e       K       k  M  N  S       s  Fya     Fyb     Jka     Jkb     
-            data = [[10, 10, 10, 0.0345, 0.0705, 0.2395, 0.0836, 0.3838, 0, 0, 0, 0.0131, 0, 0.0443, 0.0131, 0.0836, 0.0033]]
+            columns = ["A", "B", "D", "C",    "c",    "E",    "e",    "K",   "k", "M", "N", "S",    "s", "Fya",  "Fyb",  "Jka",  "Jkb"],
+            data =   [[10,  10,  10,  0.0345, 0.0705, 0.2395, 0.0836, 0.3838, 0,  0,   0,   0.0131, 0,   0.0443, 0.0131, 0.0836, 0.0033]]
             )
 
         # Patient group specific weights, to be used by the model as penalties for mismatching certain antigens.
         self.patgroup_weights = pd.DataFrame(
-            index = self.patgroups, 
-            columns = self.major + self.minor, 
-            #        A   B   D   C       c       E       e       K       k  M  N  S       s       Fya     Fyb     Jka     Jkb     
-            data = [[10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.2020, 0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # ALA
-                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.3367, 0.1282, 10,     0.6734, 10,     10    ], # SCD
-                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.1010, 0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # Thal
-                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.1010, 0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # MDS
-                    [10, 10, 10, 10,     10,     10,     10,     10,     0, 0, 0, 0.2020, 0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # AIHA
-                    [10, 10, 10, 0.0265, 10,     10,     0.0644, 10,     0, 0, 0, 0.0034, 0.0013, 0.0227, 0.0067, 0.0429, 0.0017], # Wu45
-                    [10, 10, 10, 0.0265, 0.0543, 0.1843, 0.0644, 0.2954, 0, 0, 0, 0.0034, 0.0013, 0.0227, 0.0067, 0.0429, 0.0017]] # Other
+            index =   ["ALA", "SCD", "Thal", "MDS", "AIHA", "Wu45", "Other"],
+            columns = ["A", "B", "D", "C",    "c",    "E",    "e",    "K",   "k", "M", "N", "S",      "s",    "Fya",  "Fyb",  "Jka",  "Jkb" ],
+            data =   [[10,  10,  10,  10,     10,     10,     10,     10,     0,  0,   0,   0.2020,   0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # ALA
+                      [10,  10,  10,  10,     10,     10,     10,     10,     0,  0,   0,   0.3367,   0.1282, 10,     0.6734, 10,     10    ], # SCD
+                      [10,  10,  10,  10,     10,     10,     10,     10,     0,  0,   0,   0.1010,   0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # Thal
+                      [10,  10,  10,  10,     10,     10,     10,     10,     0,  0,   0,   0.1010,   0.0384, 0.6818, 0.2020, 1.2878, 0.0505], # MDS
+                      [10,  10,  10,  10,     10,     10,     10,     10,     0,  0,   0,   0.2020,   0.0769, 1.3635, 0.4040, 2.5756, 0.1010], # AIHA
+                      [10,  10,  10,  0.0265, 10,     10,     0.0644, 10,     0,  0,   0,   0.0034,   0.0013, 0.0227, 0.0067, 0.0429, 0.0017], # Wu45
+                      [10,  10,  10,  0.0265, 0.0543, 0.1843, 0.0644, 0.2954, 0,  0,   0,   0.0034,   0.0013, 0.0227, 0.0067, 0.0429, 0.0017]] # Other
             )
 
 
@@ -66,16 +63,6 @@ class Params():
         #####################
 
         # Each column specifies the probability of a request becoming known 0, 1, 2, etc. days before its issuing date.
-        # CHANGE (no doubt)
-        # self.request_lead_time_probabilities = {
-        #     "Other" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],               # Other = same day or day before
-        #     "Wu45" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                # Wu45 = same day or day before
-        #     "MDS" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                     # MDS = 7 days ahead
-        #     "Thal" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                    # Thal = 7 days ahead
-        #     "AIHA" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0],                    # AIHA = 7 days ahead
-        #     "ALA" : [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 0, 0, 0, 0, 0, 0, 0],       # ALA = uniform between 0 and 6
-        #     "SCD" : [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]                      # SCD = 7 days ahead
-        # }
         self.request_lead_time_probabilities = {
             "Other" : [1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 1/7, 0, 0, 0, 0, 0, 0, 0],     # Other = uniform between 0 and 6
             "Wu45" : [1/2, 1/2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],                # Wu45 = 50/50 on the day or one day ahead.

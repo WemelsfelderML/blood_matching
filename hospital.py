@@ -1,4 +1,6 @@
 import pandas as pd
+import pickle
+import sys
 
 from blood import *
 
@@ -11,8 +13,12 @@ class Hospital():
         self.avg_daily_demand = SETTINGS.avg_daily_demand[htype]                        # Average daily number of units requested within this hospital.
         self.inventory_size = SETTINGS.inv_size_factor_hosp * self.avg_daily_demand     # Size of the hospital's inventory.
 
-        # Read the demand that was generated using SETTINGS.mode = "demand".
-        self.demand_data = pd.read_csv(SETTINGS.home_dir + f"demand/{self.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{htype}_{e}.csv")
+        try:
+            # Read the demand that was generated using SETTINGS.mode = "demand".
+            self.demand_data = pd.read_csv(SETTINGS.home_dir + f"demand/{self.avg_daily_demand}/{SETTINGS.test_days + SETTINGS.init_days}/{htype}_{e}.csv")
+        except:
+            print("Error: No demand data available. Generate demand data by changing the 'self.mode' variable in the 'settings.py' file to 'demand' and run main again.")
+            sys.exit(1)
 
         # TODO maybe have inventory and requests already be a index-product dictionary as used in MINRAR?
         self.inventory = []
@@ -45,7 +51,6 @@ class Hospital():
     def sample_requests_single_day(self, PARAMS, day = 0):
 
         # Select the part of the demand scenario belonging to the given day.
-        # TODO: checken of het klopt met "Day Available" en "Day Needed"
         data = self.demand_data.loc[self.demand_data["Day Available"] == day]
 
         # Transform the new requests, as read from the data file, to instances of the Blood class.
@@ -54,3 +59,8 @@ class Hospital():
             requests.append(Blood(PARAMS, ethnicity = data.loc[i,"Ethnicity"], patgroup = data.loc[i,"Patient Type"], major = vector_to_major([data.loc[i,a] for a in PARAMS.major]), minor = [data.loc[i,a] for a in PARAMS.minor], num_units = data.loc[i,"Num Units"], day_issuing = data.loc[i,"Day Needed"], day_available = data.loc[i, "Day Available"]))
 
         self.requests += requests
+
+
+    def pickle(self, path):
+        with open(path, 'wb') as f:
+            pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)

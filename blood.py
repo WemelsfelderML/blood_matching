@@ -78,6 +78,12 @@ class Blood:
             vector += minor
             self.vector = vector
 
+        # # Binary string for antigens considered mandatory per patient group.
+        # if ("patgroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
+        #     self.vector_strings = {p : "".join([str(self.vector[ag]) for ag in (PARAMS.minor + PARAMS.major) if PARAMS.patgroup_weights.loc[p,ag] == 10]) for p in PARAMS.patgroups}
+        # else:
+        #     self.vector_string = "".join([str(self.vector[ag]) for ag in (PARAMS.minor + PARAMS.major) if PARAMS.relimm_weights[ag][0] == 10])
+
         # Retrieve the major blood group name from the phenotype vector.
         self.major = vector_to_major(vector)
 
@@ -120,7 +126,6 @@ class Blood:
 
             # Calculate the RhD-usability of this blood product, by summing all prevalences of the phenotypes that can receive this product.
             # If the considered blood product is RhD negative, usability is always 1. Therefore usability is only calculated when the product is RhD positive.
-            # TODO make more efficient by pre-computing these values and storing them somewhere
             Dpos = np.array([g[0] for g in PARAMS.Rhesus_phenotypes])
             Dpos_prevalence = sum(np.array(PARAMS.Rhesus_prevalences["African"]) * part_african * Dpos) + sum(np.array(PARAMS.Rhesus_prevalences["Caucasian"]) * (1 - part_african) * Dpos)
             if self.vector[2] == 1:
@@ -146,7 +151,7 @@ class Blood:
 
     def get_usability_system(self, system_antigens, antigens, phenotypes, prevalences, part_african):
 
-        # TODO: now the usability is only calculated if all antigens of the system are included. Extend this to calculating it for only selected antigens.
+        # TODO now the usability is only calculated if all antigens of the system are included. Extend this to calculating it for only selected antigens.
         if all(ag in antigens for ag in system_antigens):
             
             usability = 0
@@ -202,13 +207,22 @@ def precompute_compatibility(SETTINGS, PARAMS, I, R):
     C = np.zeros([len(I), len(R)])
 
     if ("patgroups" in SETTINGS.strategy) or SETTINGS.patgroup_musts:
-        for i in I.keys():
-            for r in R.keys():
+        for r in R.keys():
+            # pg = R[r].patgroup
+            # r_string = R[r].vector_strings[pg]
+            for i in I.keys():
+                # if not_compatible(int(r_string), int(I[i].vector_strings[pg]), len(r_string)) == 0:
+                    # C[i,r] = 1
                 v_musts_ir = [(I[i].vector[k], R[r].vector[k]) for k in range(len(antigens)) if PARAMS.patgroup_weights.loc[R[r].patgroup,antigens[k]] == 10]
                 if all(vi <= vr for vi, vr in v_musts_ir):
                     C[i,r] = 1
 
     else:
+        # for r in R.keys():
+        #     r_string = R[r].vector_string
+        #     for i in I.keys():
+        #         if not_compatible(int(r_string), int(I[i].vector_string), len(r_string)) == 0:
+        #             C[i,r] = 1
         num_major = len(PARAMS.major)
         for i in I.keys():
             for r in R.keys():

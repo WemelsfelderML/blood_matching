@@ -11,6 +11,7 @@ from minrar_single import *
 from minrar_multi import *
 from minrar_offline import *
 from read_solution import *
+from save_state import *
 
 # Run the simulation.
 def simulation(SETTINGS, PARAMS):
@@ -28,21 +29,31 @@ def simulation(SETTINGS, PARAMS):
                 hospitals += [Hospital(SETTINGS, PARAMS, htype, (e*SETTINGS.n_hospitals[htype])+i) for i in range(SETTINGS.n_hospitals[htype])]
             dc = Distribution_center(SETTINGS, PARAMS, hospitals, e)
 
-            # CHANGE (might change)
             # Initialize all hospital inventories with random supply, where the product's age is uniformly distributed between 0 and the maximum shelf life.
             for hospital in hospitals:
+                # Fill the initial inventory with product only of age 0.
                 hospital.inventory += dc.sample_supply_single_day(PARAMS, hospital.inventory_size, 0)
+
+                # # Fill the initial inventory with products of uniformly distributed age.
                 # n_products = round(hospital.inventory_size / PARAMS.max_age)
                 # for age in range(PARAMS.max_age):
                 #     hospital.inventory += dc.sample_supply_single_day(PARAMS, n_products, age)
 
             # Create a dataframe to be filled with output measures for every simulated day.
             df = SETTINGS.initialize_output_dataframe(PARAMS, hospitals, e)
+
+            days = range(SETTINGS.init_days + SETTINGS.test_days)
+
+            df, day, dc, hospitals = load_state(SETTINGS, e, df, dc, hospitals)
+            days = [d for d in days if d >= day]
             
             # Run the simulation for the given number of days, and write outputs for all 'test days' to the dataframe.
-            for day in range(SETTINGS.init_days + SETTINGS.test_days):
+            for day in days:
                 print(f"\nDay {day}")
                 df = simulate_multiple_hospitals(SETTINGS, PARAMS, df, dc, hospitals, e, day)
+
+                # if day % 5 == 0:
+                save_state(SETTINGS, df, e, day, dc, hospitals)
 
             # Write the created output dataframe to a csv file in the 'results' directory.
             df.to_csv(SETTINGS.generate_filename("results") + f"{SETTINGS.strategy}_{'-'.join([str(SETTINGS.n_hospitals[ds]) + ds[:3] for ds in SETTINGS.n_hospitals.keys()])}_{e}.csv", sep=',', index=True)        
@@ -64,9 +75,10 @@ def simulation(SETTINGS, PARAMS):
             # Online model: each day in the simulation is solved iteratively, without knowledge about future days.
             if SETTINGS.line == "on":
 
-                # CHANGE (might change)
-                # Initialize hospital inventory
+                # Fill the initial inventory with product only of age 0.
                 hospital.inventory += dc.sample_supply_single_day(PARAMS, hospital.inventory_size, 0)
+
+                # # Fill the initial inventory with products of uniformly distributed age.
                 # n_products = round(hospital.inventory_size / PARAMS.max_age)
                 # for age in range(PARAMS.max_age):
                 #     hospital.inventory += dc.sample_supply_single_day(PARAMS, n_products, age)
@@ -74,10 +86,19 @@ def simulation(SETTINGS, PARAMS):
                 # Create a dataframe to be filled with output measures for every simulated day.
                 df = SETTINGS.initialize_output_dataframe(PARAMS, [hospital], e)
 
+                days = range(SETTINGS.init_days + SETTINGS.test_days)
+
+                df, day, dc, hospitals = load_state(SETTINGS, e, df, dc, [hospital])
+                hospital = hospitals[0]
+                days = [d for d in days if d >= day]
+
                 # Run the simulation for the given number of days, and write outputs for all 'test days' to the dataframe.
-                for day in range(SETTINGS.init_days + SETTINGS.test_days):
+                for day in days:
                     print(f"\nDay {day}")
                     df = simulate_single_hospital(SETTINGS, PARAMS, df, dc, hospital, e, day)
+
+                    # if day % 5 == 0:
+                    save_state(SETTINGS, df, e, day, dc, [hospital])
 
                 # Write the created output dataframe to a csv file in the 'results' directory.
                 df.to_csv(SETTINGS.generate_filename("results") + f"{SETTINGS.strategy}_{htype[:3]}_{e}.csv", sep=',', index=True)
@@ -157,7 +178,7 @@ def simulate_multiple_hospitals(SETTINGS, PARAMS, df, dc, hospitals, e, day):
     for h in range(len(hospitals)):
         for r in range(len(hospitals[h].requests)):
             if hospitals[h].requests[r].day_issuing == (day + 1):
-
+                
                 issued = np.where(xdc[h][:,r]==1)[0]
                 for i in issued:
                     allocations_from_dc[i,h] = 1

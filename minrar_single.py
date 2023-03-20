@@ -82,7 +82,6 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
     model.update()
     model.ModelSense = GRB.MINIMIZE
 
-    # CHANGE (no doubt)
     # Remove variable x[i,r] if the match is not timewise or antigen compatible.
     for r in R.keys():
         for i in I.keys():
@@ -107,9 +106,7 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
     # Force x[i,r] to 0 if product i∈I is outdated before request r∈R has to be issued.
     # model.addConstrs(x[i,r] <= C[i,r] * T[i,r] for i in I.keys() for r in R.keys())
 
-    # CHANGE (no doubt)
     # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
-    # model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in A.values())
     model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in A_no_Fyb.values())
     model.addConstrs(quicksum(x[i,r] * I[i].vector[A["Fyb"]] * (1 - R[r].vector[A["Fyb"]]) * R[r].vector[A["Fya"]] for i in I.keys()) <= z[r,A["Fyb"]] * R[r].num_units for r in R.keys())  
 
@@ -117,15 +114,12 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
     ## OBJECTIVES ##
     ################
 
-    # CHANGE (might change)
     # Assign a higher shortage penalty to requests with today as their issuing date.
     model.setObjective(expr = quicksum(y[r] * ((len(R) * t[r]) + 1) for r in R.keys())) 
-    # model.setObjective(expr = quicksum(y[r] * ((len(R) * t[r]) + 1) for r in R.keys()))
     
-    # # CHANGE (might change)
+    # Second objective: mismatches, fifo penalty, usability penalty, and minor antigen substitution.
     if "patgroups" in SETTINGS.strategy:
         model.setObjectiveN(expr = 5 * quicksum(z[r,k] * w[P[R[r].patgroup],k] for k in A.values() for r in R.keys())
-                                    # + quicksum(math.exp(-4.852 * (PARAMS.max_age - I[i].age - 1) / PARAMS.max_age) * x[i,r] for i in I.keys() for r in R.keys())
                                     + quicksum(0.5 ** ((PARAMS.max_age - I[i].age - 1) / 5) * x[i,r] for i in I.keys() for r in R.keys())
                                     + quicksum((bi[i] - br[r]) * x[i,r] for i in I.keys() for r in R.keys())
                                     + quicksum(x[i,r] * w[P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k]
@@ -154,6 +148,7 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
     y = np.zeros([sc, len(R)])
     z = np.zeros([sc, len(R), len(A)])
 
+    # Get the variable values for all optimal solutions found.
     for s in range(sc):
 
         model.Params.SolutionNumber = s
@@ -176,7 +171,7 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
 
         R_today = [r for r in R.keys() if R[r].day_issuing == day]
 
-        # For each solution found, the mismatch penalty for requests that need to be issued today.
+        # For each solution found, get the mismatch penalty for requests that need to be issued today, and select the lowest.
         if "patgroups"in SETTINGS.strategy:
             mismatch_today = {s : sum([z[s,r,k] * w[P[R[r].patgroup],k] for k in A.values() for r in R_today]) for s in range(sc)}
         else:
@@ -185,16 +180,19 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
         print(best)
         
         if len(best) > 1:
+            # For each solution remaining, get the average age of products issued to today's requests, and select the oldest.
             avg_age_today = {s : sum([sum([x[s,i,r] for r in R_today]) * I[i].age for i in I.keys()]) / sum(sum(x[s])) for s in best}
             best = [s for s in avg_age_today.keys() if avg_age_today[s] == max(avg_age_today.values())]
             print(best)
 
             if len(best) > 1:
+                # For each solution remaining, get the usability penalty for today's requests, and select the lowest.
                 usab_today = {s : sum([(bi[i] - br[r]) * x[s,i,r] for i in I.keys() for r in R_today]) for s in best}
                 best = [s for s in usab_today.keys() if usab_today[s] == min(usab_today.values())]
                 print(best)
 
                 if len(best) > 1:
+                    # For each solution remaining, get the mismatch penalty for today's requests, and select the lowest.
                     if "patgroups"in SETTINGS.strategy:
                         substitution_today = {s : sum([x[s,i,r] * w[P[R[r].patgroup],k] * (1 - I[i].vector[k]) * R[r].vector[k] for k in A.values() for r in R_today for i in I.keys()]) for s in best}
                     else:
@@ -212,18 +210,7 @@ def minrar_single_hospital(SETTINGS, PARAMS, hospital, day, df):
         y = y[0]
         z = z[0]
 
-    # inventory = [I[i].index for i in I.keys()]
-    # print("in inventory:",inventory) 
-
-    # issued = []
-    # for i in I.keys():
-    #     for r in R.keys():
-    #         if (R[r].day_issuing == day) and (x[i,r]==1):
-    #             issued.append(I[i].index)
-    # print("issued:",issued)
-
     df.loc[(day,hospital.name),"gurobi status"] = model.status
     df.loc[(day,hospital.name),"nvars"] = len(model.getVars())
-
 
     return df, x, y, z

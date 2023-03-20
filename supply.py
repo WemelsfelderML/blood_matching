@@ -76,10 +76,6 @@ def generate_products(SETTINGS, PARAMS, size):
         products.append(ip.vector + [ip.ethnicity])
         majors_sampled[ip.major] += 1
 
-    # for _ in range(round(size * SETTINGS.donor_eth_distr[0])):
-    #     ip = Blood(PARAMS, "Caucasian")
-    #     products.append(ip.vector + [ip.ethnicity])
-
     # For each major blood group determine how many products should be additionally sampled, to make sure that the overall list has the correct ABOD distribution
     for major in PARAMS.ABOD:
         num_to_sample = round(PARAMS.donor_ABOD_distr[major] * size) - majors_sampled[major]

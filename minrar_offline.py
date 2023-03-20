@@ -169,16 +169,6 @@ def minrar_offline(SETTINGS, PARAMS, hospital, days):
     # print("constraints shortages: ", len(R))
     ncons += len(R)
 
-    # # Force z[r,k] to 1 if at least one of the products i∈I that are issued to request r∈R mismatches on antigen k∈A.
-    # model.addConstrs(quicksum(x[i,r] * I[i].vector[k] * (1 - R[r].vector[k]) for i in I.keys()) <= z[r,k] * R[r].num_units for r in R.keys() for k in A_no_Fyb.values())
-    # # print("constraints mismatches no Fyb: ", len(R) * len(A_no_Fyb))
-    # ncons += len(R) * len(A_no_Fyb)
-
-    # # A request can only be mismatched on Fyb if it is positive for Fya.
-    # model.addConstrs(quicksum(x[i,r] * I[i].vector[A["Fyb"]] * (1 - R[r].vector[A["Fyb"]]) * R[r].vector[A["Fya"]] for i in I.keys()) <= z[r,A["Fyb"]] * R[r].num_units for r in R.keys())  
-    # # print("constraints mismatches Fyb: ", len(R))
-    # ncons += len(R)
-
     print()
     print("number of variables:", nvars)
     print("number of constraints:", ncons)
@@ -191,12 +181,12 @@ def minrar_offline(SETTINGS, PARAMS, hospital, days):
     # Assign a higher shortage penalty to requests with today as their issuing date.
     model.setObjectiveN(expr = quicksum(y[r] for r in R.keys()), index=0, priority=1, name="shortages") 
     if "patgroups" in SETTINGS.strategy:
-        model.setObjectiveN(expr = quicksum(z[r,k] * w[P[R[r].patgroup],k] for k in A.values() for r in R.keys())    # Mismatches on minor antigens.
-                                   + quicksum(1 - quicksum(x[i,r] for r in R.keys()) for i in I.keys()) * len(R)                    # Number of outdates.   TODO: times len(R) ???
+        model.setObjectiveN(expr = quicksum(z[r,k] * w[P[R[r].patgroup],k] for k in A.values() for r in R.keys())   # Mismatches on minor antigens.
+                                   + quicksum(1 - quicksum(x[i,r] for r in R.keys()) for i in I.keys()) * len(R)    # Number of outdates.
                                    , index=1, priority=0, name="other")
     else:
-        model.setObjectiveN(expr = quicksum(z[r,k] * w[k] for k in A.values() for r in R.keys())                          # Mismatches on minor antigens.
-                                   + quicksum(1 - quicksum(x[i,r] for r in R.keys()) for i in I.keys()) * len(R)                    # Number of outdates.   TODO: times len(R) ???
+        model.setObjectiveN(expr = quicksum(z[r,k] * w[k] for k in A.values() for r in R.keys())                    # Mismatches on minor antigens.
+                                   + quicksum(1 - quicksum(x[i,r] for r in R.keys()) for i in I.keys()) * len(R)    # Number of outdates.
                                    , index=1, priority=0, name="other")
     
     # Minimize the objective functions.

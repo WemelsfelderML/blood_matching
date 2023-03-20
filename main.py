@@ -3,7 +3,7 @@ from params import *
 from demand import *
 from supply import *
 from simulation import *
-# from reinforcement_learning import *
+from reinforcement_learning import *
 
 def main():
     
@@ -12,7 +12,7 @@ def main():
 
     # If a directory to store log files or results does not yet exist, make one.
     for path in ["results", "results/"+SETTINGS.model_name]:
-        check_dir_existence(path)
+        SETTINGS.check_dir_existence(path)
 
     # Sample demand for each day in the simulation, and write to a csv file.
     if SETTINGS.mode == "demand":
@@ -38,8 +38,8 @@ def main():
 
         if SETTINGS.method == "LP":
             simulation(SETTINGS, PARAMS)
-        # elif SETTINGS.method == "RL":
-        #     reinforcement_learning(SETTINGS, PARAMS)
+        elif SETTINGS.method == "RL":
+            reinforcement_learning(SETTINGS, PARAMS)
         else:
             print("Parameter 'mode' is set to 'optimize', but no existing method for optimization is given. Try 'RL' or 'LP'.")
     else:
@@ -49,12 +49,5 @@ def main():
         print("'optimize': for optimizing RBC matching, either using LP or RL method")
 
 
-# Check whether a given path exists, and create the path if it doesn't.
-def check_dir_existence(path):
-    if os.path.exists(path) == False:
-        os.mkdir(path)
-
-
 if __name__ == "__main__":
-
     main()
